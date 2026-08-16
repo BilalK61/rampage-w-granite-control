@@ -1,0 +1,23 @@
+{
+  "name": "keyboard-rgb-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron-main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "electron": "electron .",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "node-hid": "^3.4.0",
+    "vite": "^8.2.0"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "lucide": "^1.31.0",
+    "lucide-static": "^1.31.0"
+  }
+}
