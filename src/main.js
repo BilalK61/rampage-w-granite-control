@@ -506,23 +506,21 @@ function bindEvents() {
   if (btnListDevices) {
     btnListDevices.addEventListener('click', async () => {
       const logEl = document.getElementById('hid-debug-log');
-      if (window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const devices = await ipcRenderer.invoke('list-hid-devices');
-        const kbDevices = devices.filter(d => 
+      if (window.__TAURI__) {
+        const devices = await window.__TAURI__.core.invoke('list_hid_devices');
+        const kbDevices = devices.filter(d =>
           d.product.toLowerCase().includes('keyboard') ||
           d.product.toLowerCase().includes('2.4g') ||
           parseInt(d.usagePage) >= 0xff00
         );
-        const txt = kbDevices.map(d => 
+        const txt = kbDevices.map(d =>
           `${d.vendorId}:${d.productId} | ${d.product} | IF:${d.interface} | UP:${d.usagePage}`
         ).join('\n') || 'Cihaz bulunamadı';
         if (logEl) logEl.textContent = txt;
-        // Also console.log all devices for copy-paste
         console.log('=== TÜM HID CİHAZLARI ===');
         devices.forEach(d => console.log(JSON.stringify(d)));
       } else {
-        if (logEl) logEl.textContent = 'Sadece Electron masaüstü modunda çalışır.';
+        if (logEl) logEl.textContent = 'Sadece Tauri masaüstü modunda çalışır.';
       }
     });
   }
@@ -871,11 +869,11 @@ const modeIdToEffect = {
   0: 'off'
 };
 
-if (window.require) {
+// ── Tauri Hardware Sync Listener (replaces ipcRenderer.on) ──────────────────
+if (window.__TAURI__) {
   try {
-    const { ipcRenderer } = window.require('electron');
-    
-    ipcRenderer.on('hardware-rgb-sync', (event, hw) => {
+    // Push events from the Rust 800ms poller via Tauri event system
+    window.__TAURI__.event.listen('hardware-rgb-sync', ({ payload: hw }) => {
       // Don't override custom per-key mode with hardware sync
       if (state.activeEffect === 'custom_per_key') return;
 
@@ -900,7 +898,7 @@ if (window.require) {
     });
 
     // Initial state sync on app load
-    ipcRenderer.invoke('get-hardware-rgb-state').then(hw => {
+    window.__TAURI__.core.invoke('get_hardware_rgb_state').then(hw => {
       if (hw) {
         const effectName = modeIdToEffect[hw.mode] || 'static';
         state.activeEffect = effectName;
@@ -921,7 +919,7 @@ if (window.require) {
       }
     });
   } catch (e) {
-    console.log('[Sync] Electron IPC Renderer listener kurulamadı:', e.message);
+    console.log('[Sync] Tauri event listener kurulamadı:', e.message);
   }
 }
 

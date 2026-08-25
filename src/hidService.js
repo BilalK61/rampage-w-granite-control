@@ -1,12 +1,36 @@
 /**
- * Sinowealth / EVISION OpenRGB Protocol HID Service (Native Electron + WebHID Bridge)
+ * HID Service — Tauri adapter
+ *
+ * Replaces the Electron ipcRenderer.invoke() calls with Tauri's invoke().
+ * The API surface is identical to the old HIDService class so no changes
+ * are needed in rgbEngine.js or main.js.
+ *
+ * Migration change summary:
+ *   BEFORE: const { ipcRenderer } = window.require('electron');
+ *           await ipcRenderer.invoke('send-native-hid-rgb', payload);
+ *   AFTER:  import { invoke } from '@tauri-apps/api/core';
+ *           await invoke('send_native_hid_rgb', payload);
+ *
+ * Note: Tauri command names use snake_case; Electron used kebab-case.
  */
+
+// Tauri invoke — available globally in Tauri WebView via the JS bundle
+// or imported from @tauri-apps/api/core in a module context.
+async function tauriInvoke(command, payload) {
+  if (window.__TAURI__) {
+    return window.__TAURI__.core.invoke(command, payload);
+  }
+  // Fallback: not running inside Tauri (dev browser preview)
+  console.warn('[HID] Not in Tauri context — command ignored:', command);
+  return { success: false, message: 'Running outside Tauri.' };
+}
+
 export class HIDService {
   constructor() {
     this.device = null;
     this.isConnected = false;
     this.listeners = [];
-    this.isElectron = !!(window && (window.require || window.electron || window.process?.versions?.electron));
+    this.isTauri = !!(window.__TAURI__);
   }
 
   onStatusChange(callback) {
@@ -24,14 +48,15 @@ export class HIDService {
   }
 
   async connectHID() {
-    if (this.isElectron) {
+    if (this.isTauri) {
       this.isConnected = true;
-      this.device = { productName: 'Rampage W-Granite (Native OS USB Driver Active)' };
-      this.log('Native Masaüstü Sürücüsü Aktif! Donanım kilidi yok.');
+      this.device = { productName: 'Rampage W-Granite (Native Tauri/hidapi Driver Active)' };
+      this.log('Tauri hidapi sürücüsü aktif! Donanım kilidi yok.');
       this.notifyStatus();
       return { success: true, deviceName: this.device.productName };
     }
 
+    // Browser fallback (WebHID — for non-Tauri dev preview)
     if (!('hid' in navigator)) {
       this.simulateConnection();
       return { success: true, simulated: true };
@@ -64,24 +89,13 @@ export class HIDService {
     const r = parseInt(hex.substring(0, 2), 16) || 0;
     const g = parseInt(hex.substring(2, 4), 16) || 0;
     const b = parseInt(hex.substring(4, 6), 16) || 0;
-
     const { colorType = 'custom', direction = 0 } = options;
 
-    // Direct Native IPC Execution if running in Electron
-    if (this.isElectron) {
-      try {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('send-native-hid-rgb', {
-          r, g, b, effectMode, speed, brightness, colorType, direction
-        });
-        this.log(res.message);
-        return res;
-      } catch (e) {
-        this.log(`Native IPC Hatası: ${e.message}`);
-      }
-    }
-
-    this.log('WebHID Uyarısı: Tarayıcı raw paketleri engelliyor. Masaüstü modunda çalıştırın.');
+    const res = await tauriInvoke('send_native_hid_rgb', {
+      r, g, b, effectMode, speed, brightness, colorType, direction
+    });
+    if (res) this.log(res.message);
+    return res;
   }
 
   async sendSideRGBReport(sideMode, speed, brightness, primaryColorHex, flags = 0x07) {
@@ -90,33 +104,17 @@ export class HIDService {
     const g = parseInt(hex.substring(2, 4), 16) || 0;
     const b = parseInt(hex.substring(4, 6), 16) || 0;
 
-    if (this.isElectron) {
-      try {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('send-native-side-rgb', {
-          r, g, b, sideMode, speed, brightness, flags
-        });
-        this.log(res.message);
-        return res;
-      } catch (e) {
-        this.log(`Yan Işık IPC Hatası: ${e.message}`);
-      }
-    }
+    const res = await tauriInvoke('send_native_side_rgb', {
+      r, g, b, sideMode, speed, brightness, flags
+    });
+    if (res) this.log(res.message);
+    return res;
   }
 
-  // Send Per-Key Custom RGB Map to Hardware via SET_USERPIC 0x0C
+  // Send Per-Key Custom RGB Map to Hardware
   async sendPerKeyRGBReport(perKeyColorMap) {
-    if (this.isElectron) {
-      try {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('send-native-perkey-rgb', perKeyColorMap);
-        this.log(res.message);
-        return res;
-      } catch (e) {
-        this.log(`Özel RGB IPC Hatası: ${e.message}`);
-      }
-    }
+    const res = await tauriInvoke('send_native_perkey_rgb', perKeyColorMap);
+    if (res) this.log(res.message);
+    return res;
   }
 }
-
-
