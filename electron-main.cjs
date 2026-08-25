@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 
@@ -13,7 +13,27 @@ try {
 
 let mainWindow;
 
-function createWindow() {
+const http = require('http');
+
+function waitForVite(url, maxWaitMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    function tryConnect() {
+      http.get(url, (res) => {
+        resolve();
+      }).on('error', () => {
+        if (Date.now() - start > maxWaitMs) {
+          reject(new Error('Vite sunucusu başlatılamadı (timeout)'));
+          return;
+        }
+        setTimeout(tryConnect, 300);
+      });
+    }
+    tryConnect();
+  });
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -25,7 +45,18 @@ function createWindow() {
       webSecurity: false
     }
   });
+
+  try {
+    console.log('[Electron] Vite sunucusu bekleniyor...');
+    await waitForVite('http://localhost:5173');
+    console.log('[Electron] Vite hazır, yükleniyor.');
+  } catch (e) {
+    console.error('[Electron]', e.message);
+  }
+
   mainWindow.loadURL('http://localhost:5173');
+  // DevTools'u aç (hataları görmek için)
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(createWindow);

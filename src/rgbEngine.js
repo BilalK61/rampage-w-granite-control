@@ -1,4 +1,4 @@
-﻿/**
+/**
  * RGB Animation Engine - Handles active lighting effects on the UI & Keyboard Hardware
  */
 export class RGBEngine {
@@ -97,6 +97,19 @@ export class RGBEngine {
 
   setCustomKeyColor(code, hex, skipHardware = false) {
     this.customKeyColors[code] = hex;
+
+    // Immediately update the DOM element for instant visual feedback
+    const el = this.keyElementsMap[code];
+    if (el && hex) {
+      const r = parseInt(hex.slice(1, 3), 16) || 0;
+      const g = parseInt(hex.slice(3, 5), 16) || 0;
+      const b = parseInt(hex.slice(5, 7), 16) || 0;
+      el.style.setProperty('--key-rgb', hex);
+      el.style.background = `rgba(${r}, ${g}, ${b}, 0.22)`;
+      el.style.borderColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+      el.style.boxShadow = `0 0 8px 1px rgba(${r}, ${g}, ${b}, 0.25), inset 0 0 6px rgba(${r}, ${g}, ${b}, 0.1)`;
+    }
+
     if (this.currentEffect === 'custom_per_key' && !skipHardware) {
       if (this.perKeyDebounce) clearTimeout(this.perKeyDebounce);
       this.perKeyDebounce = setTimeout(() => {
@@ -107,6 +120,13 @@ export class RGBEngine {
 
   clearCustomKeyColors() {
     this.customKeyColors = {};
+    // Also reset all key DOM styles to default dark state
+    Object.values(this.keyElementsMap).forEach(el => {
+      el.style.removeProperty('--key-rgb');
+      el.style.background = '';
+      el.style.borderColor = '';
+      el.style.boxShadow = '';
+    });
     if (this.currentEffect === 'custom_per_key') {
       this.sendPerKeyReport();
     }
@@ -144,9 +164,24 @@ export class RGBEngine {
     // Özel Tuş Bazlı RGB Modu (Per-Key Custom Lighting)
     if (this.currentEffect === 'custom_per_key') {
       keys.forEach(([code, el]) => {
-        const keyColor = this.customKeyColors[code] || this.primaryColor || '#8b5cf6';
+        const keyColor = this.customKeyColors[code] || null;
         el.style.opacity = opacity;
-        el.style.setProperty('--key-rgb', keyColor);
+        if (keyColor) {
+          el.style.setProperty('--key-rgb', keyColor);
+          // Parse hex to rgba for direct background tint (fallback if color-mix not supported)
+          const r = parseInt(keyColor.slice(1, 3), 16) || 0;
+          const g = parseInt(keyColor.slice(3, 5), 16) || 0;
+          const b = parseInt(keyColor.slice(5, 7), 16) || 0;
+          el.style.background = `rgba(${r}, ${g}, ${b}, 0.22)`;
+          el.style.borderColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+          el.style.boxShadow = `0 0 8px 1px rgba(${r}, ${g}, ${b}, 0.25), inset 0 0 6px rgba(${r}, ${g}, ${b}, 0.1)`;
+        } else {
+          // Key not assigned — reset to default dark
+          el.style.removeProperty('--key-rgb');
+          el.style.background = '';
+          el.style.borderColor = '';
+          el.style.boxShadow = '';
+        }
       });
       return;
     }
@@ -164,8 +199,8 @@ export class RGBEngine {
         case 'breathing': {
           const alpha = (Math.sin(this.tick * 2) + 1) / 2;
           elOpacity = (alpha * opacity).toFixed(2);
-          color = this.colorType === 'rainbow' 
-            ? `hsl(${(this.tick * 40) % 360}, 90%, 55%)` 
+          color = this.colorType === 'rainbow'
+            ? `hsl(${(this.tick * 40) % 360}, 90%, 55%)`
             : this.primaryColor;
           break;
         }

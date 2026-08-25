@@ -1,4 +1,4 @@
-﻿import './style.css';
+import './style.css';
 import { KEYBOARD_LAYOUTS, DEFAULT_PRESET_COLORS } from './layouts.js';
 import { HIDService } from './hidService.js';
 import { RGBEngine } from './rgbEngine.js';
@@ -14,7 +14,7 @@ const state = {
   currentLayout: 'compact75',
   deviceConnected: false,
   deviceName: 'Rampage W-Granite (75% Türkçe Q)',
-  perKeyColors: JSON.parse(localStorage.getItem('aether-perkey') || '{}'),
+  perKeyColors: {},
   favoriteColors: JSON.parse(localStorage.getItem('aether-favorites') || '[]'),
   macros: [
     { key: 'KeyG', name: 'Hızlı Kısayol', action: 'Ctrl + C' },
@@ -27,6 +27,29 @@ const state = {
   }
 };
 
+function loadPerKeyColors() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('aether-perkey') || '{}');
+    const entries = Object.values(raw);
+    if (entries.length === 0) return {};
+
+    // Detect old broken bulk-data: if more than 15 keys share the same single color,
+    // it was likely set by the old buggy WASD preset (all keys = '#1e1b4b').
+    // Clear it so users start fresh.
+    const colorFreq = {};
+    entries.forEach(c => { colorFreq[c] = (colorFreq[c] || 0) + 1; });
+    const maxFreq = Math.max(...Object.values(colorFreq));
+    if (entries.length > 15 && maxFreq > 15) {
+      console.log('[PerKey] Eski toplu renk verisi temizlendi (bozuk preset kalıntısı).');
+      localStorage.removeItem('aether-perkey');
+      return {};
+    }
+    return raw;
+  } catch {
+    return {};
+  }
+}
+
 function saveFavorites() {
   localStorage.setItem('aether-favorites', JSON.stringify(state.favoriteColors));
 }
@@ -35,6 +58,8 @@ function savePerKeyColors() {
   localStorage.setItem('aether-perkey', JSON.stringify(state.perKeyColors));
 }
 
+// Load and auto-clean per-key color data from localStorage
+state.perKeyColors = loadPerKeyColors();
 
 // Services
 const hid = new HIDService();
@@ -339,7 +364,7 @@ function renderActiveTabContent() {
               </span>
               ${state.activeEffect === 'custom_per_key' ? `<span style="font-size:0.7rem; background:var(--primary); color:#fff; padding:2px 6px; border-radius:4px; font-weight:700;">AKTİF</span>` : ''}
             </div>
-            <p style="font-size:0.72rem; color:var(--text-muted); margin-bottom:10px; line-height:1.4;">
+            <p class="per-key-selected-info" style="font-size:0.72rem; color:var(--text-muted); margin-bottom:10px; line-height:1.4;">
               ${state.selectedKey ? `Seçili Tuş: <strong style="color:var(--text-main); font-family:var(--font-mono);">${state.selectedKey}</strong> — Rengi tıklayarak bu tuşa ata!` : `Yukarıdaki klavyeden <strong>herhangi bir tuşa tıkla</strong>, ardından paletten rengini belirle.`}
             </p>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -511,6 +536,7 @@ function bindEvents() {
 
     keyEl.addEventListener('click', () => {
       state.selectedKey = code;
+
       // If currently in custom_per_key mode, clicking the key immediately assigns the active primary color
       if (state.activeEffect === 'custom_per_key') {
         state.perKeyColors[code] = state.primaryColor;
@@ -518,9 +544,18 @@ function bindEvents() {
         if (rgbEngine) {
           rgbEngine.setCustomKeyColor(code, state.primaryColor);
         }
+        // Update ONLY the selected-key info label — no full DOM rebuild
+        const infoEl = document.querySelector('.per-key-selected-info');
+        if (infoEl) {
+          infoEl.innerHTML = `Seçili Tuş: <strong style="color:var(--text-main); font-family:var(--font-mono);">${code}</strong> — Rengi tıklayarak bu tuşa ata!`;
+        }
+        // Update selected state on keys (remove old, add new)
+        document.querySelectorAll('.keycap.selected').forEach(el => el.classList.remove('selected'));
+        keyEl.classList.add('selected');
+      } else {
+        if (rgbEngine) rgbEngine.triggerKeyRipple(code);
+        renderApp();
       }
-      if (rgbEngine) rgbEngine.triggerKeyRipple(code);
-      renderApp();
     });
   });
 
@@ -544,21 +579,26 @@ function bindEvents() {
   if (btnPresetWasd) {
     btnPresetWasd.addEventListener('click', () => {
       state.activeEffect = 'custom_per_key';
-      // Fill all keys with a base dark blue / purple
-      const allCodes = Object.keys(keyElementsMap);
-      allCodes.forEach(c => state.perKeyColors[c] = '#1e1b4b');
-      // Highlight WASD in Cyan
+
+      // Clear all existing per-key colors first (unlit = dark)
+      state.perKeyColors = {};
+
+      // WASD → Cyan
       ['KeyW', 'KeyA', 'KeyS', 'KeyD'].forEach(c => state.perKeyColors[c] = '#06b6d4');
-      // Highlight Arrows in Amber
+      // Arrow keys → Amber
       ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].forEach(c => state.perKeyColors[c] = '#f59e0b');
-      // Highlight Space and Enter in Emerald
+      // Space & Enter → Emerald
       ['Space', 'Enter'].forEach(c => state.perKeyColors[c] = '#10b981');
-      // Highlight Escape and Delete in Red
+      // Escape & Delete → Red
       ['Escape', 'Delete'].forEach(c => state.perKeyColors[c] = '#ef4444');
 
       savePerKeyColors();
+
       if (rgbEngine) {
+        // First clear ALL key colors in engine (reset unlit keys)
+        rgbEngine.clearCustomKeyColors();
         rgbEngine.setEffect('custom_per_key');
+        // Then apply only the preset colors
         Object.entries(state.perKeyColors).forEach(([k, col]) => {
           rgbEngine.setCustomKeyColor(k, col);
         });
@@ -655,12 +695,18 @@ function bindEvents() {
         if (rgbEngine) {
           rgbEngine.setCustomKeyColor(state.selectedKey, state.primaryColor);
         }
+        // Update color label inline — no DOM rebuild
+        const lbl = document.getElementById('lbl-color-val');
+        if (lbl) lbl.textContent = state.primaryColor;
+        // Update swatch active state inline
+        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+        sw.classList.add('active');
       } else {
         if (rgbEngine) {
           rgbEngine.setColor(state.primaryColor);
         }
+        renderApp();
       }
-      renderApp();
     });
   });
 
@@ -686,6 +732,7 @@ function bindEvents() {
         state.perKeyColors[state.selectedKey] = state.primaryColor;
         savePerKeyColors();
         if (rgbEngine) rgbEngine.setCustomKeyColor(state.selectedKey, state.primaryColor);
+        // No renderApp — keep DOM intact
       } else {
         state.activeEffect = 'static';
         if (rgbEngine) {
@@ -829,6 +876,9 @@ if (window.require) {
     const { ipcRenderer } = window.require('electron');
     
     ipcRenderer.on('hardware-rgb-sync', (event, hw) => {
+      // Don't override custom per-key mode with hardware sync
+      if (state.activeEffect === 'custom_per_key') return;
+
       const effectName = modeIdToEffect[hw.mode] || 'static';
       state.activeEffect = effectName;
       state.speed = hw.speedPct;
