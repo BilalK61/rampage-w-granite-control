@@ -1,24 +1,60 @@
-# Logs
-logs
-*.log
+# ─── Node / npm ───────────────────────────────────────────────────────────────
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
+.pnpm-store/
 
-node_modules
-dist
-dist-ssr
+# ─── Vite build output ────────────────────────────────────────────────────────
+dist/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# ─── Rust / Cargo ─────────────────────────────────────────────────────────────
+src-tauri/target/
+src-tauri/Cargo.lock          # Uncomment if this were a library; keep for binary apps
+# Cargo.lock                  # (leave commented — binary apps should commit their lock)
+
+# Build helper artefacts
+src-tauri/run_tests.bat       # Dev convenience script, not part of the app
+src-tauri/test_output.log
+
+# ─── Tauri generated / sensitive ──────────────────────────────────────────────
+src-tauri/gen/
+src-tauri/.tauri/
+
+# ─── Electron (old) ───────────────────────────────────────────────────────────
+# Keep electron-main.cjs in history for reference during migration cutover;
+# remove this comment once cutover is complete and the file is deleted.
+
+# ─── OS junk ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Editor directories ───────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# ─── Env / secrets ────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ─── Logs (catch-all) ─────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+*.local
+.cache/
