@@ -1,15 +1,5 @@
 # .cargo/config.toml
-# Project-level Cargo configuration.
-# Tells rustc where to find the MSVC linker and Windows SDK on this machine.
-# The paths here are for the VS 18 (2026) Community + Windows SDK 10.0.18362 install.
-# If you use a different VS version, run: `cargo build` from a VS Developer Command Prompt
-# and it will pick up the environment automatically.
-
-[target.x86_64-pc-windows-msvc]
-linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\link.exe"
-# Windows SDK library paths — update the SDK version if yours differs
-rustflags = [
-    "-L", "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\lib\\x64",
-    "-L", "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.18362.0\\um\\x64",
-    "-L", "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.18362.0\\ucrt\\x64",
-]
+# Auto-detected MinGW64 GCC linker
+[target.x86_64-pc-windows-gnu]
+linker = "C:\\Users\\emirb\\.mingw64\\mingw64\\bin\\gcc.exe"
+ar = "C:\\Users\\emirb\\.mingw64\\mingw64\\bin\\ar.exe"

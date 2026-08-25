@@ -31,7 +31,7 @@ impl PollGuard {
     pub fn suppress(&self, duration: Duration) {
         let flag = Arc::clone(&self.0);
         flag.store(true, Ordering::SeqCst);
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             time::sleep(duration).await;
             flag.store(false, Ordering::SeqCst);
         });
@@ -55,7 +55,7 @@ fn signature(s: &HardwareRgbState) -> String {
 /// Emits `hardware-rgb-sync` to the frontend whenever the keyboard's
 /// reported state changes between polls.
 pub fn spawn_poller(app_handle: AppHandle, guard: PollGuard) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let mut interval = time::interval(Duration::from_millis(800));
         let mut last_sig = String::new();
         let mut initialized = false;

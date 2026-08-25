@@ -28,9 +28,9 @@ fn main() {
             send_native_perkey_rgb,
             get_hardware_rgb_state,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // Start the hardware polling task once the app window is ready.
-            spawn_poller(app.handle().clone(), poll_guard.clone());
+            spawn_poller(app.handle().clone(), poll_guard);
             tracing::info!("AetherRGB started — hardware poller running");
             Ok(())
         })
