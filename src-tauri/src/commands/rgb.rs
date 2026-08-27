@@ -9,8 +9,10 @@ use hidapi::HidApi;
 
 use crate::hid::protocol::{
     RgbParams, SideRgbParams, LightingMode, ColorType,
-    build_rgb_packet, build_side_rgb_packet, build_rgb_packet as build_perkey_approx_packet,
+    build_rgb_packet, build_side_rgb_packet,
     speed_pct_to_wire, brightness_pct_to_wire,
+    blank_matrix, keycode_to_matrix_index, matrix_to_bytes,
+    build_userpic_page_yc500, build_userpic_page_gen2, build_userpic_activate_packet,
 };
 use crate::hid::device::{find_rgb_device_path, send_feature_report};
 use crate::hid::poller::PollGuard;
@@ -201,14 +203,20 @@ pub fn send_native_side_rgb(payload: SendSideRgbPayload) -> IpcResult {
 // ─── Command: send_native_perkey_rgb ─────────────────────────────────────────
 
 /// Per-key color map: key code → hex color string (e.g. `"KeyW" → "#06b6d4"`).
-/// Since this keyboard firmware doesn't support true per-key matrix write via
-/// normal SET_LEDPARAM, we use the dominant-color approximation (Mode 1 Static).
+///
+/// Uses the real SET_USERPIC (opcode 0x0C) protocol:
+///   1. Build a 128-slot LED matrix from the JS key-code map
+///   2. Serialize to 384 bytes (R,G,B × 128 slots)
+///   3. Split into 7 pages of 56 bytes and send via HID feature report
+///      (with a 10 ms settle delay between pages as required by the firmware)
+///   4. Activate mode 13 (Userpic) via SET_LEDPARAM 0x07
 #[tauri::command]
 pub fn send_native_perkey_rgb(
     per_key_color_map: std::collections::HashMap<String, String>,
     guard: State<'_, PollGuard>,
 ) -> IpcResult {
-    guard.suppress(Duration::from_secs(1));
+    // Suppress the hardware poller for 4 seconds so concurrent GET_LEDPARAM doesn't interfere.
+    guard.suppress(Duration::from_secs(4));
 
     let api = match HidApi::new() {
         Ok(a) => a,
@@ -217,31 +225,49 @@ pub fn send_native_perkey_rgb(
 
     let path = match find_rgb_device_path(&api) {
         Some(p) => p,
-        None => return IpcResult::err("Klavye bulunamadı."),
+        None => return IpcResult::err("Klavye RGB arayüzü bulunamadı."),
     };
 
-    // Find the most-used color in the map (dominant color strategy).
-    let best_color = dominant_color(&per_key_color_map);
-    let (r, g, b) = parse_hex_color(&best_color);
+    // ── Build the LED matrix ──────────────────────────────────────────────
+    let mut matrix = blank_matrix();
 
-    let params = RgbParams {
-        r, g, b,
-        mode: LightingMode::Static,
-        speed_wire: 1,
-        brightness_wire: 4,
-        color_type: ColorType::Custom,
-        direction: 0,
-    };
-
-    let packet = build_rgb_packet(&params);
-
-    match send_feature_report(&api, &path, &packet) {
-        Ok(()) => {
-            tracing::info!(dominant_color = %best_color, "Per-key dominant color applied");
-            IpcResult::ok("Özel tuş renkleri klavyeye uygulandı!")
+    for (code, hex_color) in &per_key_color_map {
+        if let Some(idx) = keycode_to_matrix_index(code) {
+            let (r, g, b) = parse_hex_color(hex_color);
+            matrix[idx] = (r, g, b);
         }
-        Err(e) => IpcResult::err(format!("Özel RGB Hatası: {e}")),
     }
+
+    let rgb_bytes = matrix_to_bytes(&matrix);
+
+    // ── Upload 7 pages via SET_USERPIC (yc500 protocol) ──────────────────
+    for page in 0..7usize {
+        let packet = build_userpic_page_yc500(page, &rgb_bytes);
+        if let Err(e) = send_feature_report(&api, &path, &packet) {
+            return IpcResult::err(format!("SET_USERPIC page {page} hatası: {e}"));
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    }
+
+    // ── Also upload gen2 protocol format for universal compatibility ─────
+    for page in 0..7usize {
+        let packet = build_userpic_page_gen2(page, &rgb_bytes);
+        let _ = send_feature_report(&api, &path, &packet);
+        std::thread::sleep(Duration::from_millis(15));
+    }
+
+    // Settle delay before activating mode 13
+    std::thread::sleep(Duration::from_millis(50));
+
+    // ── Activate mode 13 (Userpic display) ───────────────────────────────
+    let activate = build_userpic_activate_packet();
+    if let Err(e) = send_feature_report(&api, &path, &activate) {
+        return IpcResult::err(format!("Mode 13 aktivasyon hatası: {e}"));
+    }
+
+    let key_count = per_key_color_map.len();
+    tracing::info!(keys = key_count, "Per-key RGB matrix uploaded (SET_USERPIC 0x0C, mode 13)");
+    IpcResult::ok(format!("✅ Tuş bazlı RGB uygulandı! ({key_count} tuş renklendirildi)"))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

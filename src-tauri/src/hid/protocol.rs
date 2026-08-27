@@ -331,8 +331,293 @@ pub fn parse_get_ledparam_reply(rep: &[u8]) -> Option<HardwareRgbState> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SET_USERPIC (opcode 0x0C) — Per-Key RGB  [Protocol family: yc500 / gen1]
+//
+// Uploads 384 bytes of per-key RGB data (128 matrix slots × R, G, B)
+// split across 7 pages of 56 bytes each (last page: 384 - 6*56 = 48 bytes).
+//
+// Packet layout (64 bytes, feature report ID 0):
+//   [0]  = 0x00  Report ID
+//   [1]  = 0x0C  SET_USERPIC opcode
+//   [2]  = length_low  (low byte of remaining payload length)
+//   [3]  = length_high (high byte of remaining payload length)
+//   [4]  = page index (0..=6)
+//   [5]  = 0x00
+//   [6]  = 0x00
+//   [7]  = checksum = (0xFF - sum(bytes[1..=6])) & 0xFF  (Bit7 checksum)
+//   [8..=63] = up to 56 bytes of RGB payload for this page
+//
+// After sending all 7 pages, activate mode 13 via SET_LEDPARAM 0x07
+// to switch the hardware display to the uploaded per-key map.
+//
+// Key matrix order for 75% compact layout (matrix index → LED position):
+// Row 0: Esc, F1-F12, Search, Lock, Del         (16 keys, indices 0..15)
+// Row 1: `, 1-0, -, =, Backspace, Home           (15 keys, indices 16..30)
+// Row 2: Tab, Q-P, [, ], Enter, End              (15 keys, indices 31..45)
+// Row 3: Caps, A-L, ;, ', \, PgUp               (14 keys, indices 46..59)
+// Row 4: LShift, IntlBs, Z-/, RShift, Up, PgDn  (14 keys, indices 60..73)
+// Row 5: LCtrl, Fn, LWin, LAlt, Space, RAlt, RWin, Left, Down, Right (10 keys)
+// Total: ~84 physical keys out of 128 matrix slots (rest = 0,0,0 = off)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Number of matrix slots in the keyboard's LED map (always 128 for this family).
+pub const MATRIX_SIZE: usize = 128;
+
+/// RGB triple.
+pub type Rgb = (u8, u8, u8);
+
+/// A full per-key color map: one RGB triple per matrix slot.
+/// Slots that have no physical key should be (0, 0, 0).
+pub type LedMatrix = [Rgb; MATRIX_SIZE];
+
+/// Build a blank (all-off) matrix.
+pub fn blank_matrix() -> LedMatrix {
+    [(0, 0, 0); MATRIX_SIZE]
+}
+
+/// JS key code → matrix slot index for the Rampage W-Granite 75% TKL layout.
+///
+/// JS key code → matrix slot index for ROYUAN 75% compact keyboards (Rampage W-Granite, Attack Shark X86, etc.).
+///
+/// Hardware Matrix Layout: Column-major matrix, ~6 rows per column:
+///   Col 0 : Esc(0), `(1), Tab(2), Caps(3), LShift(4), LCtrl(5)
+///   Col 1 : F1(6), 1(7), Q(8), A(9), <>(10), Win(11)
+///   Col 2 : F2(12), 2(13), W(14), S(15), Z(16), LAlt(17)
+///   Col 3 : F3(18), 3(19), E(20), D(21), X(22)
+///   Col 4 : F4(24), 4(25), R(26), F(27), C(28)
+///   Col 5 : F5(30), 5(31), T(32), G(33), V(34)
+///   Col 6 : F6(36), 6(37), Y(38), H(39), B(40), Space(41)
+///   Col 7 : F7(42), 7(43), U(44), J(45), N(46)
+///   Col 8 : F8(48), 8(49), I(50), K(51), M(52)
+///   Col 9 : F9(54), 9(55), O(56), L(57), Ö/,(58), RAlt(59)
+///   Col 10: F10(60), 0(61), P(62), Ş/:(63), Ç/.(64), Fn(65)
+///   Col 11: F11(66), *(67), Ğ/[(68), İ/'(69), .//(70)
+///   Col 12: F12(72), -(73), Ü/](74), RShift(76), Left(77)
+///   Col 13: Del(78), Backspace(79), ,//\(80), Enter(81), Up(82), Down(83)
+///   Col 14: Search(84), Home(85), PgUp(86), PgDn(87), End(88), Right(89)
+pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
+    match code {
+        // Col 0
+        "Escape"         => Some(0),
+        "Backquote"      => Some(1),
+        "Tab"            => Some(2),
+        "CapsLock"       => Some(3),
+        "ShiftLeft"      => Some(4),
+        "ControlLeft"    => Some(5),
+
+        // Col 1
+        "F1"             => Some(6),
+        "Digit1"         => Some(7),
+        "KeyQ"           => Some(8),
+        "KeyA"           => Some(9),
+        "IntlBackslash"  => Some(10), // ISO key < > |
+        "MetaLeft"       => Some(11), // Left Win/Cmd
+
+        // Col 2
+        "F2"             => Some(12),
+        "Digit2"         => Some(13),
+        "KeyW"           => Some(14),
+        "KeyS"           => Some(15),
+        "KeyZ"           => Some(16),
+        "AltLeft"        => Some(17), // Left Alt
+
+        // Col 3
+        "F3"             => Some(18),
+        "Digit3"         => Some(19),
+        "KeyE"           => Some(20),
+        "KeyD"           => Some(21),
+        "KeyX"           => Some(22),
+
+        // Col 4
+        "F4"             => Some(24),
+        "Digit4"         => Some(25),
+        "KeyR"           => Some(26),
+        "KeyF"           => Some(27),
+        "KeyC"           => Some(28),
+
+        // Col 5
+        "F5"             => Some(30),
+        "Digit5"         => Some(31),
+        "KeyT"           => Some(32),
+        "KeyG"           => Some(33),
+        "KeyV"           => Some(34),
+
+        // Col 6
+        "F6"             => Some(36),
+        "Digit6"         => Some(37),
+        "KeyY"           => Some(38),
+        "KeyH"           => Some(39),
+        "KeyB"           => Some(40),
+        "Space"          => Some(41),
+
+        // Col 7
+        "F7"             => Some(42),
+        "Digit7"         => Some(43),
+        "KeyU"           => Some(44),
+        "KeyJ"           => Some(45),
+        "KeyN"           => Some(46),
+
+        // Col 8
+        "F8"             => Some(48),
+        "Digit8"         => Some(49),
+        "KeyI"           => Some(50),
+        "KeyK"           => Some(51),
+        "KeyM"           => Some(52),
+
+        // Col 9
+        "F9"             => Some(54),
+        "Digit9"         => Some(55),
+        "KeyO"           => Some(56),
+        "KeyL"           => Some(57),
+        "Comma"          => Some(58), // Turkish Ö
+        "AltRight"       => Some(59), // AltGr
+
+        // Col 10
+        "F10"            => Some(60),
+        "Digit0"         => Some(61),
+        "KeyP"           => Some(62),
+        "Semicolon"      => Some(63), // Turkish Ş
+        "Period"         => Some(64), // Turkish Ç
+        "Fn"             => Some(65),
+
+        // Col 11
+        "F11"            => Some(66),
+        "Minus"          => Some(67), // Turkish *
+        "BracketLeft"    => Some(68), // Turkish Ğ
+        "Quote"          => Some(69), // Turkish İ
+        "Slash"          => Some(70), // Turkish . :
+        "MetaRight"      => Some(71), // Right Win/Option
+
+        // Col 12
+        "F12"            => Some(72),
+        "Equal"          => Some(73), // Turkish - _
+        "BracketRight"   => Some(74), // Turkish Ü
+        "ShiftRight"     => Some(76),
+        "ArrowLeft"      => Some(77),
+
+        // Col 13
+        "Delete"         => Some(78),
+        "Backspace"      => Some(79),
+        "Backslash"      => Some(80), // Turkish , ;
+        "Enter"          => Some(81),
+        "ArrowUp"        => Some(82),
+        "ArrowDown"      => Some(83),
+
+        // Col 14 (Right Navigation Column)
+        "Search"         => Some(84),
+        "Lock"           => Some(84),
+        "Home"           => Some(85),
+        "PageUp"         => Some(86),
+        "PageDown"       => Some(87),
+        "End"            => Some(88),
+        "ArrowRight"     => Some(89),
+
+        _                => None,
+    }
+}
+
+/// Serialize a `LedMatrix` as a flat 384-byte buffer (R,G,B × 128 slots).
+pub fn matrix_to_bytes(matrix: &LedMatrix) -> [u8; 384] {
+    let mut out = [0u8; 384];
+    for (i, &(r, g, b)) in matrix.iter().enumerate() {
+        out[i * 3]     = r;
+        out[i * 3 + 1] = g;
+        out[i * 3 + 2] = b;
+    }
+    out
+}
+
+/// Build one 65-byte SET_USERPIC page packet for yc500 family (Report ID 0 at byte 0).
+///
+/// Packet layout on wire (65 bytes):
+///   [0]  = 0x00 (Report ID)
+///   [1]  = 0x0C (SET_USERPIC opcode)
+///   [2]  = 0x00 (slot 0)
+///   [3]  = 0x80 (len low: 384 & 0xFF)
+///   [4]  = 0x01 (len high: (384 >> 8) & 0xFF)
+///   [5]  = page (0..=6)
+///   [6]  = 0x00
+///   [7]  = 0x00
+///   [8]  = checksum = (0xFF - sum(bytes[1..=7])) & 0xFF (Bit7 checksum)
+///   [9..=64] = up to 56 RGB payload bytes for this page (starts at index 9)
+pub fn build_userpic_page_yc500(page: usize, rgb_bytes: &[u8; 384]) -> Packet {
+    const PAGE_SIZE: usize = 56;
+    let offset = page * PAGE_SIZE;
+    let payload_len = (384usize).saturating_sub(offset).min(PAGE_SIZE);
+
+    let mut buf = [0u8; PACKET_LEN];
+    buf[0] = 0x00; // Report ID
+    buf[1] = 0x0C; // SET_USERPIC
+    buf[2] = 0x00; // slot 0
+    buf[3] = 0x80; // len low (384)
+    buf[4] = 0x01; // len high
+    buf[5] = page as u8;
+    buf[6] = 0x00;
+    buf[7] = 0x00;
+    buf[8] = calc_checksum(&buf[1..=7]);
+
+    let src = &rgb_bytes[offset .. offset + payload_len];
+    buf[9 .. 9 + payload_len].copy_from_slice(src);
+
+    buf
+}
+
+/// Build one 65-byte SET_USERPIC page packet for gen2 family.
+pub fn build_userpic_page_gen2(page: usize, rgb_bytes: &[u8; 384]) -> Packet {
+    const PAGE_SIZE: usize = 56;
+    let offset = page * PAGE_SIZE;
+    let payload_len = (384usize).saturating_sub(offset).min(PAGE_SIZE);
+    let is_last = page == 6;
+
+    let mut buf = [0u8; PACKET_LEN];
+    buf[0] = 0x00; // Report ID
+    buf[1] = 0x0C; // SET_USERPIC
+    buf[2] = 0x00; // slot 0
+    buf[3] = 0xFF; // BULK_SENTINEL
+    buf[4] = page as u8;
+    buf[5] = payload_len as u8;
+    buf[6] = if is_last { 1 } else { 0 };
+    buf[7] = 0x00;
+    buf[8] = calc_checksum(&buf[1..=7]);
+
+    let src = &rgb_bytes[offset .. offset + payload_len];
+    buf[9 .. 9 + payload_len].copy_from_slice(src);
+
+    buf
+}
+
+/// Build the activation packet for Mode 13 (Userpic display).
+///
+/// SET_LEDPARAM layout (65 bytes):
+///   [0]  = 0x00 (Report ID)
+///   [1]  = 0x07 (SET_LEDPARAM opcode)
+///   [2]  = 13   (MODE_USER_PICTURE)
+///   [3]  = 1    (wire speed)
+///   [4]  = 4    (brightness: max 4)
+///   [5]  = 0x00 (option << 4 = slot 0, flags = 0)
+///   [6]  = 0    (R)
+///   [7]  = 200  (G)
+///   [8]  = 200  (B)
+///   [9]  = checksum = (0xFF - sum(bytes[1..=8])) & 0xFF
+pub fn build_userpic_activate_packet() -> Packet {
+    let mut buf = [0u8; PACKET_LEN];
+    buf[0] = 0x00; // Report ID
+    buf[1] = 0x07; // SET_LEDPARAM
+    buf[2] = 13;   // MODE_USER_PICTURE
+    buf[3] = 1;    // wire speed
+    buf[4] = 4;    // brightness
+    buf[5] = 0x00; // option=0 << 4, flags=0
+    buf[6] = 0;    // R
+    buf[7] = 200;  // G
+    buf[8] = 200;  // B
+    buf[9] = calc_checksum(&buf[1..=8]);
+    buf
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Unit Tests
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 #[cfg(test)]
 mod tests {
