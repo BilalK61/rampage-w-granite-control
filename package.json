@@ -9,7 +9,8 @@
     "electron": "electron .",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "start": "tauri dev"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

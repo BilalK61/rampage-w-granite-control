@@ -14,15 +14,15 @@
  * Note: Tauri command names use snake_case; Electron used kebab-case.
  */
 
-// Tauri invoke — available globally in Tauri WebView via the JS bundle
-// or imported from @tauri-apps/api/core in a module context.
+import { invoke } from '@tauri-apps/api/core';
+
 async function tauriInvoke(command, payload) {
-  if (window.__TAURI__) {
-    return window.__TAURI__.core.invoke(command, payload);
+  try {
+    return await invoke(command, { payload });
+  } catch (err) {
+    console.warn(`[HID] Tauri invoke '${command}' failed:`, err);
+    return { success: false, message: typeof err === 'string' ? err : (err.message || 'Hata') };
   }
-  // Fallback: not running inside Tauri (dev browser preview)
-  console.warn('[HID] Not in Tauri context — command ignored:', command);
-  return { success: false, message: 'Running outside Tauri.' };
 }
 
 export class HIDService {
@@ -113,8 +113,13 @@ export class HIDService {
 
   // Send Per-Key Custom RGB Map to Hardware
   async sendPerKeyRGBReport(perKeyColorMap) {
-    const res = await tauriInvoke('send_native_perkey_rgb', perKeyColorMap);
-    if (res) this.log(res.message);
-    return res;
+    try {
+      const res = await invoke('send_native_perkey_rgb', { perKeyColorMap });
+      if (res) this.log(res.message);
+      return res;
+    } catch (err) {
+      console.warn('[HID] send_native_perkey_rgb failed:', err);
+      return { success: false, message: typeof err === 'string' ? err : (err.message || 'Hata') };
+    }
   }
 }

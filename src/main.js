@@ -2,6 +2,8 @@ import './style.css';
 import { KEYBOARD_LAYOUTS, DEFAULT_PRESET_COLORS } from './layouts.js';
 import { HIDService } from './hidService.js';
 import { RGBEngine } from './rgbEngine.js';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 // Application State
 const state = {
@@ -506,9 +508,9 @@ function bindEvents() {
   if (btnListDevices) {
     btnListDevices.addEventListener('click', async () => {
       const logEl = document.getElementById('hid-debug-log');
-      if (window.__TAURI__) {
-        const devices = await window.__TAURI__.core.invoke('list_hid_devices');
-        const kbDevices = devices.filter(d =>
+      try {
+        const devices = await invoke('list_hid_devices');
+        const kbDevices = (devices || []).filter(d =>
           d.product.toLowerCase().includes('keyboard') ||
           d.product.toLowerCase().includes('2.4g') ||
           parseInt(d.usagePage) >= 0xff00
@@ -518,9 +520,9 @@ function bindEvents() {
         ).join('\n') || 'Cihaz bulunamadı';
         if (logEl) logEl.textContent = txt;
         console.log('=== TÜM HID CİHAZLARI ===');
-        devices.forEach(d => console.log(JSON.stringify(d)));
-      } else {
-        if (logEl) logEl.textContent = 'Sadece Tauri masaüstü modunda çalışır.';
+        (devices || []).forEach(d => console.log(JSON.stringify(d)));
+      } catch (err) {
+        if (logEl) logEl.textContent = `Hata: ${err}`;
       }
     });
   }
@@ -869,14 +871,36 @@ const modeIdToEffect = {
   0: 'off'
 };
 
-// ── Tauri Hardware Sync Listener (replaces ipcRenderer.on) ──────────────────
-if (window.__TAURI__) {
-  try {
-    // Push events from the Rust 800ms poller via Tauri event system
-    window.__TAURI__.event.listen('hardware-rgb-sync', ({ payload: hw }) => {
-      // Don't override custom per-key mode with hardware sync
-      if (state.activeEffect === 'custom_per_key') return;
+// ── Tauri Hardware Sync Listener ─────────────────────────────────────────────
+try {
+  // Push events from the Rust 800ms poller via Tauri event system
+  listen('hardware-rgb-sync', ({ payload: hw }) => {
+    // Don't override custom per-key mode with hardware sync
+    if (state.activeEffect === 'custom_per_key') return;
 
+    const effectName = modeIdToEffect[hw.mode] || 'static';
+    state.activeEffect = effectName;
+    state.speed = hw.speedPct;
+    state.brightness = hw.brightnessPct;
+    state.colorType = hw.colorType;
+    state.direction = hw.direction;
+    state.primaryColor = hw.primaryColor;
+
+    if (rgbEngine) {
+      rgbEngine.currentEffect = effectName;
+      rgbEngine.speed = hw.speedPct;
+      rgbEngine.brightness = hw.brightnessPct;
+      rgbEngine.colorType = hw.colorType;
+      rgbEngine.direction = hw.direction;
+      rgbEngine.primaryColor = hw.primaryColor;
+    }
+
+    renderApp();
+  });
+
+  // Initial state sync on app load
+  invoke('get_hardware_rgb_state').then(hw => {
+    if (hw) {
       const effectName = modeIdToEffect[hw.mode] || 'static';
       state.activeEffect = effectName;
       state.speed = hw.speedPct;
@@ -884,7 +908,6 @@ if (window.__TAURI__) {
       state.colorType = hw.colorType;
       state.direction = hw.direction;
       state.primaryColor = hw.primaryColor;
-
       if (rgbEngine) {
         rgbEngine.currentEffect = effectName;
         rgbEngine.speed = hw.speedPct;
@@ -893,34 +916,11 @@ if (window.__TAURI__) {
         rgbEngine.direction = hw.direction;
         rgbEngine.primaryColor = hw.primaryColor;
       }
-
       renderApp();
-    });
-
-    // Initial state sync on app load
-    window.__TAURI__.core.invoke('get_hardware_rgb_state').then(hw => {
-      if (hw) {
-        const effectName = modeIdToEffect[hw.mode] || 'static';
-        state.activeEffect = effectName;
-        state.speed = hw.speedPct;
-        state.brightness = hw.brightnessPct;
-        state.colorType = hw.colorType;
-        state.direction = hw.direction;
-        state.primaryColor = hw.primaryColor;
-        if (rgbEngine) {
-          rgbEngine.currentEffect = effectName;
-          rgbEngine.speed = hw.speedPct;
-          rgbEngine.brightness = hw.brightnessPct;
-          rgbEngine.colorType = hw.colorType;
-          rgbEngine.direction = hw.direction;
-          rgbEngine.primaryColor = hw.primaryColor;
-        }
-        renderApp();
-      }
-    });
-  } catch (e) {
-    console.log('[Sync] Tauri event listener kurulamadı:', e.message);
-  }
+    }
+  }).catch(() => {});
+} catch (e) {
+  console.log('[Sync] Tauri event listener kurulamadı:', e.message);
 }
 
 // Initial Render
