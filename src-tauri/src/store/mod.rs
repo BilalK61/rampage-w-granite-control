@@ -61,9 +61,9 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    /// Write to a temp path and read back to verify roundtrip.
-    fn temp_path() -> PathBuf {
-        std::env::temp_dir().join(format!("aether-rgb-test-{}.json", std::process::id()))
+    /// One temp file per test: tests run in parallel and must not share a path.
+    fn temp_path(test: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("aether-rgb-test-{}-{test}.json", std::process::id()))
     }
 
     fn save_to(path: &PathBuf, state: &AppState) -> Result<(), String> {
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn roundtrip_per_key_colors() {
-        let path = temp_path();
+        let path = temp_path("per_key");
         let mut state = AppState::default();
         state.per_key_colors.insert("KeyW".to_string(), "#06b6d4".to_string());
         state.per_key_colors.insert("Space".to_string(), "#10b981".to_string());
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn roundtrip_favorite_colors() {
-        let path = temp_path();
+        let path = temp_path("favorites");
         let mut state = AppState::default();
         state.favorite_colors = vec!["#8b5cf6".to_string(), "#ec4899".to_string()];
 
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn corrupt_json_returns_default() {
-        let path = temp_path();
+        let path = temp_path("corrupt");
         fs::write(&path, b"not valid json!!!").unwrap();
         let loaded = load_from(&path);
         assert!(loaded.per_key_colors.is_empty());
