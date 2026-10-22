@@ -7,6 +7,8 @@ mod store;
 
 use tauri::Manager;
 use hid::poller::{spawn_poller, PollGuard};
+use commands::macros::{assign_macro, clear_macro_key, restore_key_defaults, read_macro_keys};
+use commands::remap::{assign_key, clear_key_remap, read_remapped_keys};
 use commands::rgb::{send_native_hid_rgb, send_native_side_rgb, send_native_perkey_rgb};
 use commands::device::{list_hid_devices, get_hardware_rgb_state, get_system_idle_ms, get_connection_status, get_battery_status};
 
@@ -31,6 +33,13 @@ fn main() {
             get_system_idle_ms,
             get_connection_status,
             get_battery_status,
+            assign_macro,
+            clear_macro_key,
+            restore_key_defaults,
+            read_macro_keys,
+            assign_key,
+            clear_key_remap,
+            read_remapped_keys,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
