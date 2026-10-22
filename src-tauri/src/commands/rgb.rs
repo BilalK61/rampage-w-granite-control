@@ -1,6 +1,6 @@
 /// Tauri commands for RGB lighting control.
 ///
-/// These replace the Electron `ipcMain.handle()` handlers in `electron-main.cjs`.
+/// These replace the Electron `ipcMain.handle()` handlers.
 /// All commands are called from the renderer via `invoke('command_name', args)`.
 
 use std::sync::atomic::{AtomicU64, Ordering};

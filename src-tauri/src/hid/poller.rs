@@ -4,7 +4,7 @@
 /// Fn+shortcut combos (e.g. Fn+\ to cycle modes). When the hardware state
 /// changes, emits a `hardware-rgb-sync` event to the renderer.
 ///
-/// Equivalent to the JS `setInterval` in `electron-main.cjs`, but:
+/// Equivalent to the JS `setInterval`, but:
 ///  - Fully async via Tokio
 ///  - HID reads happen in `spawn_blocking` (they are synchronous) so they
 ///    cannot stall the async runtime
