@@ -687,7 +687,7 @@ function renderActiveTabContent() {
               <select id="sel-low-battery">
                 ${[0, 10, 15, 20, 25, 30].map(v => `<option value="${v}" ${lowBatteryLevel() === v ? 'selected' : ''}>${v === 0 ? 'Kapalı' : '%' + v}</option>`).join('')}
               </select>
-              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce sağ altta uyarı çıkar. 2.4G ve Bluetooth ile bağlıyken çalışır; kabloda pil okunamaz.</small></span>
+              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce sağ altta uyarı çıkar.</small></span>
               <button class="btn-secondary" id="btn-test-alert" type="button">Dene</button>
             </label>
             <div class="backup-row">
