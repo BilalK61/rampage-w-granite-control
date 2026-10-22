@@ -46,6 +46,18 @@ const state = {
   }
 };
 
+// The keyboard cannot report its battery over the cable, so the last level read
+// through the 2.4G dongle is remembered and shown as "last known".
+function lastKnownBattery() {
+  try {
+    const v = Number(localStorage.getItem('rampage-last-battery'));
+    return Number.isFinite(v) && v > 0 ? Math.min(100, v) : null;
+  } catch { return null; }
+}
+function rememberBattery(pct) {
+  try { if (pct > 0) localStorage.setItem('rampage-last-battery', String(pct)); } catch { /* optional */ }
+}
+
 // Presses of one key closer together than this count as a double press (chatter).
 const CHATTER_MS = 30;
 
@@ -199,7 +211,7 @@ function renderBatteryIndicator() {
 
       <div class="battery-info">
         <span class="battery-pct">${isConnected ? (isCharging ? 'USB' : `${pct}%`) : '--'}</span>
-        <span class="battery-label">${isConnected ? (isCharging ? 'Kablolu' : (pct < 20 ? 'Pil düşük' : '2.4G')) : 'Bağlı değil'}</span>
+        <span class="battery-label">${isConnected ? (isCharging ? (lastKnownBattery() ? `Kablolu · son %${lastKnownBattery()}` : 'Kablolu') : (pct < 20 ? 'Pil düşük' : '2.4G')) : 'Bağlı değil'}</span>
       </div>
     </div>
   `;
@@ -248,12 +260,12 @@ function renderApp() {
           <div class="sidebar-battery-header">
             <span class="sidebar-battery-title">
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
-              ${state.deviceConnected && state.battery.isCharging ? 'Kablolu' : 'Pil'}
+              ${state.deviceConnected && state.battery.isCharging ? (lastKnownBattery() ? `Kablolu · son %${lastKnownBattery()}` : 'Kablolu') : 'Pil'}
             </span>
             <span class="sidebar-battery-pct-val">${state.deviceConnected ? (state.battery.isCharging ? 'USB' : `%${state.battery.percentage}`) : '--'}</span>
           </div>
           <div class="sidebar-battery-track">
-            <div class="sidebar-battery-fill ${state.battery.isCharging ? 'charging' : ''}" style="width: ${state.deviceConnected ? (state.battery.isCharging ? 100 : state.battery.percentage) : 0}%"></div>
+            <div class="sidebar-battery-fill ${state.battery.isCharging ? 'charging' : ''}" style="width: ${state.deviceConnected ? (state.battery.isCharging ? (lastKnownBattery() ?? 100) : state.battery.percentage) : 0}%"></div>
           </div>
         </div>
 
@@ -1530,6 +1542,7 @@ async function refreshHardwareStatus() {
     }
 
     if (batStatus) {
+      if (batStatus.connectionType === 'dongle_24g' && batStatus.isConnected) rememberBattery(batStatus.percentage);
       if (state.battery.percentage !== batStatus.percentage ||
           state.battery.isCharging !== batStatus.isCharging ||
           state.battery.connectionType !== batStatus.connectionType) {

@@ -152,7 +152,7 @@ pub fn get_battery_status() -> BatteryStatus {
             is_charging: true,
             is_connected: true,
             connection_type: "wired".to_string(),
-            status_text: "Kablolu Şarj (USB 5V)".to_string(),
+            status_text: "Kablolu (pil seviyesi kabloda okunamıyor)".to_string(),
         }
     } else if let Some(path) = dongle_path {
         let (percentage, is_connected, status_text) = match read_dongle_status(&api, &path) {
