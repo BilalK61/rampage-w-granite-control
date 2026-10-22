@@ -657,7 +657,6 @@ function renderActiveTabContent() {
           <div style="margin-top:4px; padding-top:6px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:4px; font-size:0.74rem; color:var(--text-muted);">
             <div><strong style="color:var(--text-main); font-weight:600;">Cihaz:</strong> Rampage W-Granite</div>
             ${state.hw.firmware ? `<div><strong style="color:var(--text-main); font-weight:600;">Sürüm:</strong> ${state.hw.firmware}</div>` : ''}
-            <div><strong style="color:var(--text-main); font-weight:600;">USB:</strong> 3151:${state.connectionType === 'dongle_24g' ? '4011' : '4015'}</div>
           </div>
 
           <div style="margin-top:6px;">
@@ -688,7 +687,8 @@ function renderActiveTabContent() {
               <select id="sel-low-battery">
                 ${[0, 10, 15, 20, 25, 30].map(v => `<option value="${v}" ${lowBatteryLevel() === v ? 'selected' : ''}>${v === 0 ? 'Kapalı' : '%' + v}</option>`).join('')}
               </select>
-              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce bildirim gelir (2.4G ile bağlıyken). F4'ün yanıp sönmeye başladığı seviyeyi klavye bildirmiyor; gerekirse buradan ayarlayın.</small></span>
+              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce sağ altta uyarı çıkar. Yalnızca 2.4G ile bağlıyken çalışır.</small></span>
+              <button class="btn-secondary" id="btn-test-alert" type="button">Dene</button>
             </label>
             <div class="backup-row">
               <button class="btn-secondary" id="btn-backup-export">Yedek al</button>
@@ -853,6 +853,9 @@ function bindEvents() {
       sendLowBatteryAlert();
     });
   }
+
+  const btnTestAlert = document.getElementById('btn-test-alert');
+  if (btnTestAlert) btnTestAlert.addEventListener('click', e => { e.preventDefault(); if (isTauri()) invoke('test_low_battery_alert').catch(() => {}); });
 
   const chkCloseTray = document.getElementById('chk-close-tray');
   if (chkCloseTray) {

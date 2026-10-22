@@ -2,13 +2,14 @@
 ///
 /// The keyboard starts blinking F4 at a firmware-defined level that it never
 /// reports, so the alert level is a setting (0 = off). The poller feeds every
-/// 2.4G battery reading in here; one notification is shown per drop below the
+/// 2.4G battery reading in here; one pop-up is shown per drop below the
 /// level and the alert re-arms once the battery has recovered a few points.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use tauri::AppHandle;
-use tauri_plugin_notification::NotificationExt;
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Percent at or below which the alert fires; 0 disables it.
 static THRESHOLD: AtomicU8 = AtomicU8::new(20);
@@ -21,6 +22,67 @@ const REARM_MARGIN: u8 = 5;
 pub fn set_low_battery_alert(percent: u8) {
     THRESHOLD.store(percent.min(50), Ordering::SeqCst);
     ALERTED.store(false, Ordering::SeqCst);
+}
+
+/// Shows the alert once, regardless of the real battery level, so the user can see how it looks.
+#[tauri::command(async)]
+pub fn test_low_battery_alert(app: AppHandle) {
+    // Looks exactly like the real alert, at the configured level (20 when it is off).
+    let level = THRESHOLD.load(Ordering::SeqCst);
+    show(&app, if level == 0 { 20 } else { level });
+}
+
+#[tauri::command]
+pub fn close_toast(app: AppHandle) {
+    if let Some(w) = app.get_webview_window(TOAST_LABEL) {
+        let _ = w.close();
+    }
+}
+
+const TOAST_LABEL: &str = "battery-toast";
+const TOAST_SIZE: (f64, f64) = (340.0, 88.0);
+const TOAST_MARGIN: f64 = 16.0;
+const TOAST_SECONDS: u64 = 10;
+
+/// A small always-on-top pop-up in the bottom-right corner, drawn by the app
+/// itself so it works with Windows notifications switched off and while the
+/// main window is hidden in the tray.
+fn show(app: &AppHandle, percent: u8) {
+    close_toast(app.clone());
+    let url = WebviewUrl::App(format!("toast.html?p={percent}").into());
+    let built = WebviewWindowBuilder::new(app, TOAST_LABEL, url)
+        .title("Klavye pili")
+        .inner_size(TOAST_SIZE.0, TOAST_SIZE.1)
+        .decorations(false)
+        .resizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .shadow(false)
+        .visible(false)
+        .background_color(tauri::window::Color(20, 24, 36, 255))
+        .build();
+    let window = match built {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(error = %e, "battery pop-up failed");
+            return;
+        }
+    };
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
+        let area = monitor.work_area();
+        let x = area.position.x as f64 + area.size.width as f64 - (TOAST_SIZE.0 + TOAST_MARGIN) * scale;
+        let y = area.position.y as f64 + area.size.height as f64 - (TOAST_SIZE.1 + TOAST_MARGIN) * scale;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
+    }
+    // Shown only after it is in place, so it never flashes at the top-left.
+    let _ = window.show();
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(TOAST_SECONDS)).await;
+        close_toast(handle);
+    });
 }
 
 /// What a battery reading means for the alert state.
@@ -54,15 +116,7 @@ pub fn on_battery_reading(app: &AppHandle, percent: u8) {
         Decision::Notify => {
             ALERTED.store(true, Ordering::SeqCst);
             tracing::info!(percent, "Low battery -> notifying");
-            let shown = app
-                .notification()
-                .builder()
-                .title("Klavye pili azaldı")
-                .body(format!("Pil %{percent}. Kabloyu takıp şarj edin."))
-                .show();
-            if let Err(e) = shown {
-                tracing::warn!(error = %e, "low battery notification failed");
-            }
+            show(app, percent);
         }
         Decision::Rearm => ALERTED.store(false, Ordering::SeqCst),
         Decision::Nothing => {}

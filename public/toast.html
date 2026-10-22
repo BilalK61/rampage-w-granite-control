@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Klavye pili</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #141824; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #e8eaf0;
+    border: 1px solid #283044;
+    border-left: 3px solid #e50914;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+    cursor: pointer;
+    user-select: none;
+    animation: in 0.22s ease-out;
+  }
+  @keyframes in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+  .pct { font-size: 1.5rem; font-weight: 700; min-width: 58px; color: #ff5a63; font-variant-numeric: tabular-nums; }
+  .txt { flex: 1; min-width: 0; }
+  .title { font-size: 0.9rem; font-weight: 600; }
+  .body { font-size: 0.78rem; color: #8b93a7; margin-top: 3px; }
+  .close { color: #8b93a7; font-size: 1.1rem; line-height: 1; padding: 4px; }
+  .close:hover { color: #e8eaf0; }
+</style>
+</head>
+<body id="toast">
+  <div class="pct" id="pct">--</div>
+  <div class="txt">
+    <div class="title">Klavye pili azaldı</div>
+    <div class="body">Kabloyu takıp şarj edin.</div>
+  </div>
+  <div class="close" aria-label="Kapat">&times;</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const p = Number(q.get('p'));
+  document.getElementById('pct').textContent = '%' + p;
+  document.getElementById('toast').addEventListener('click', () => {
+    window.__TAURI_INTERNALS__.invoke('close_toast').catch(() => window.close());
+  });
+</script>
+</body>
+</html>
