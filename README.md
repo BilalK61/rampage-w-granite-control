@@ -44,12 +44,18 @@ A detailed comparison of runtime performance metrics and deep hardware integrati
 
 ## ✨ Features
 
-- 🌈 **19 Hardware Lighting Modes**: Static, Breathing, Wave, Ripple, Neon, Meteor, Snowfall, and more.
-- 🎨 **Per-Key Custom RGB**: Interactive on-screen key selector with hex palette and WASD presets.
-- 💡 **Edge / Side Light Controls**: Full side-LED speed, brightness, and effect customization.
-- 🔄 **Two-Way Hardware Sync**: Live 800ms background polling captures physical keyboard shortcuts (`Fn + \`, etc.) and mirrors them in the UI.
-- 📁 **JSON Configuration Store**: Saves favorite colors and key maps to your OS config directory (`state.json`).
-- ⚡ **Lightweight & Fast**: Rust-native USB HID communication (`hidapi` crate) without Electron overhead.
+- 🌈 **19 hardware lighting modes** with speed, brightness, direction and color.
+- 🎨 **Per-key RGB**: click keys to color them; clicking a key with the same color again turns its light off.
+- 🗂 **Lighting profiles**: three profiles (lighting settings + per-key colors) kept in the app and sent to the keyboard on switch.
+- ⌨ **On-board macros**: record key sequences with timing and store them in the keyboard's memory, so they run with the app closed.
+- 🔁 **Key remapping**: make a key press another key or a combination of up to three keys, stored on the keyboard.
+- 🎚 **Debounce level** written to the keyboard, plus firmware version read-out.
+- 📡 **Cable and 2.4G dongle**: the dongle needs a relay handshake that the app handles; the keyboard must be awake.
+- 🔄 **Hardware sync**: polling picks up changes made on the keyboard (`Fn` shortcuts) and mirrors them in the UI.
+- 🖥 **Tray, start with Windows, single instance**; closing the window can keep the app in the tray.
+- 💾 **Backup**: export and import profiles, macros, key assignments and settings as one JSON file.
+
+Not supported by this keyboard's firmware (the vendor driver stubs them out too): sleep timer, polling-rate change and side-light settings. The "Uyku" setting is an app feature: it turns the lights off when the PC is idle while the app is running.
 
 ---
 
@@ -159,8 +165,9 @@ cargo build --release
 │                                                            │
 │  ┌──────────────────────┐   invoke('send_native_hid_rgb')  │
 │  │ Commands Layer       │◄────────────────────────────┐   │
-│  │ (commands/rgb.rs)    │   listen('hardware-rgb-sync')   │
-│  │ (commands/device.rs) │────────────────────────────►│   │
+│  │ (commands/*.rs)      │   listen('hardware-rgb-sync')   │
+│  │ rgb, macros, remap,  │────────────────────────────►│   │
+│  │ settings, app        │                             │   │
 │  └──────────┬───────────┘                             │   │
 │             │                                         │   │
 │  ┌──────────▼───────────┐  ┌──────────────────────────┴┐  │
@@ -184,14 +191,30 @@ cargo build --release
 
 | Device | VID | PID | Interface | Usage Page |
 |---|---|---|---|---|
-| Rampage W-Granite 75% | `0x3151` | `0x4015` | `2` | `0xFFFF` |
-| Rampage W-Granite 75% (Alt FW) | `0x3151` | `0x4011` | `2` | `0xFFFF` |
+| Rampage W-Granite 75% (USB cable) | `0x3151` | `0x4015` | `2` | `0xFFFF` |
+| Rampage W-Granite 75% (2.4G dongle) | `0x3151` | `0x4011` | `2` | `0xFFFF` |
 
-### Packet Specification (65 Bytes)
-- **SET_LEDPARAM (`0x07`)**: Main keyboard RGB lighting modes.
-- **SET_SLEDPARAM (`0x08`)**: Edge & side RGB strip parameters.
-- **GET_LEDPARAM (`0x87`)**: Hardware status query.
-- **Checksum Calculation**: `(0xFF - sum(bytes[1..8])) & 0xFF` at index `9`.
+### Packet Specification (65 bytes, Report ID `0` at byte 0)
+Commands are feature reports. Most use a checksum `0xFF - sum(bytes[1..=7])` at byte 8 (LED parameters cover bytes 1..=8, checksum at byte 9).
+
+| Opcode | Purpose |
+|---|---|
+| `0x07` / `0x87` | Set / get lighting mode, speed, brightness, color |
+| `0x0C` | Per-key picture upload (7 pages, then activate mode 13) |
+| `0x09` / `0x89` | Set (9 pages) / get (8 pages) key matrix: 4 bytes per key |
+| `0x0B` / `0x8B` | Set / get on-board macro (5 / 4 pages) |
+| `0x11` / `0x91` | Set / get debounce level (1 to 10) |
+| `0x80`, `0x85` | Firmware version, current profile |
+
+Key matrix entries: stock key `[0, 0, hid, 0]`, remap `[0, k1, k2, k3]`, macro `[9, mode, macro index, 0]`. Macro data is `[repeat lo, hi]` followed by `[hid, delay | down<<7]` records (a 4-byte form carries delays over 127 ms).
+
+### 2.4G dongle relay
+The dongle does not forward commands by itself. To send: poll `0xF7` until it reports "can send", select the keyboard with `0xF6 0x0A`, then send the command. To read: poll `0xF7` until "can read", send `0xFC`, then read the feature report. Replies can be stale, so anything that gets written back is read twice and compared first.
+
+### Safety of key assignments
+The firmware has no single-key write, so each assignment rewrites the whole key matrix. The app checks that the matrix read is complete, saves the original matrix to `%APPDATA%aether-rgbkeymap-backup-p0.bin` before the first change, and reads every write back. "Tüm tuşları ilk haline döndür" writes the backup back.
+
+The protocol was reverse-engineered from the vendor's public web driver and checked against the keyboard.
 
 ---
 
