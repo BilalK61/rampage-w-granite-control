@@ -16,6 +16,7 @@ use commands::rgb::{send_native_hid_rgb, send_native_side_rgb, send_native_perke
 use commands::macros::{assign_macro, clear_macro_key, restore_key_defaults, read_macro_keys};
 use commands::remap::{assign_key, clear_key_remap, read_remapped_keys};
 use commands::settings::{read_device_settings, set_debounce};
+use commands::battery_alert::set_low_battery_alert;
 use commands::app::{CLOSE_TO_TRAY, get_autostart, save_backup, set_autostart, set_close_to_tray};
 use commands::device::{list_hid_devices, get_hardware_rgb_state, get_system_idle_ms, get_connection_status, get_battery_status};
 
@@ -41,6 +42,7 @@ fn main() {
     tauri::Builder::default()
         // Must be the first plugin: a second launch just raises the running window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
+        .plugin(tauri_plugin_notification::init())
         .manage(poll_guard.clone())
         .invoke_handler(tauri::generate_handler![
             list_hid_devices,
@@ -64,6 +66,7 @@ fn main() {
             set_autostart,
             set_close_to_tray,
             save_backup,
+            set_low_battery_alert,
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

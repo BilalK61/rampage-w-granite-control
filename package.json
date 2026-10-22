@@ -11,11 +11,11 @@
     "start": "tauri dev"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.12.4",
     "vite": "^8.2.0"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "^2.12.4",
     "canvas-confetti": "^1.9.4",
     "lucide": "^1.31.0",
     "lucide-static": "^1.31.0"

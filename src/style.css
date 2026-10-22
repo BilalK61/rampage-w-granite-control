@@ -1899,3 +1899,14 @@ body {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.toggle-row select {
+  margin-top: 1px;
+  min-width: 78px;
+  padding: 3px 6px;
+  background: var(--bg-card, #14161d);
+  color: var(--text-main);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  font-size: 0.74rem;
+}

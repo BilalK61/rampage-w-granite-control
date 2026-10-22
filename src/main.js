@@ -684,6 +684,12 @@ function renderActiveTabContent() {
               <input type="checkbox" id="chk-close-tray" ${closeToTrayEnabled() ? 'checked' : ''}>
               <span>Pencereyi kapatınca tepside çalışsın <small>Işık kuralları ve uyku çalışmaya devam eder. Tamamen kapatmak için tepsi simgesinden Çık.</small></span>
             </label>
+            <label class="toggle-row">
+              <select id="sel-low-battery">
+                ${[0, 10, 15, 20, 25, 30].map(v => `<option value="${v}" ${lowBatteryLevel() === v ? 'selected' : ''}>${v === 0 ? 'Kapalı' : '%' + v}</option>`).join('')}
+              </select>
+              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce bildirim gelir (2.4G ile bağlıyken). F4'ün yanıp sönmeye başladığı seviyeyi klavye bildirmiyor; gerekirse buradan ayarlayın.</small></span>
+            </label>
             <div class="backup-row">
               <button class="btn-secondary" id="btn-backup-export">Yedek al</button>
               <button class="btn-secondary" id="btn-backup-import">Yedekten yükle</button>
@@ -836,6 +842,15 @@ function bindEvents() {
         chkAutostart.checked = !!state.app.autostart;
         setBackupStatus(false, 'Ayar yazılamadı.');
       }
+    });
+  }
+
+  const selLowBattery = document.getElementById('sel-low-battery');
+  if (selLowBattery) {
+    selLowBattery.addEventListener('change', () => {
+      state.deviceSettings.lowBattery = Number(selLowBattery.value);
+      saveSettings();
+      sendLowBatteryAlert();
     });
   }
 
@@ -1448,6 +1463,15 @@ function closeToTrayEnabled() {
   return state.deviceSettings.closeToTray !== false;
 }
 
+function lowBatteryLevel() {
+  const v = state.deviceSettings.lowBattery;
+  return Number.isFinite(v) ? v : 20;
+}
+
+function sendLowBatteryAlert() {
+  if (isTauri()) invoke('set_low_battery_alert', { percent: lowBatteryLevel() }).catch(() => {});
+}
+
 function sendCloseToTray() {
   if (isTauri()) invoke('set_close_to_tray', { enabled: closeToTrayEnabled() }).catch(() => {});
 }
@@ -1561,6 +1585,7 @@ initMacros({ rerender: renderApp, beforeOpen: cancelRemapEdit, takenKeys: remapK
 initRemap({ rerender: renderApp, beforeOpen: cancelMacroEdit, takenKeys: macroKeys });
 
 sendCloseToTray();
+sendLowBatteryAlert();
 loadAutostart();
 
 // Initial Render and Hardware Query

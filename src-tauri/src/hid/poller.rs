@@ -99,12 +99,17 @@ pub fn spawn_poller(app_handle: AppHandle, guard: PollGuard) {
                 let mut link = RgbLink::open(&api, &path).ok()?;
                 let state = link.query(&build_get_ledparam_packet()).ok()
                     .and_then(|reply| parse_get_ledparam_reply(&reply));
-                Some((state, link.is_dongle()))
+                // Battery level rides on the same dongle link (None over the cable).
+                let battery = link.dongle_status().ok().flatten().filter(|d| d.online).map(|d| d.battery);
+                Some((state, link.is_dongle(), battery))
             })
             .await;
 
             let hw = match result {
-                Ok(Some((state, is_dongle))) => {
+                Ok(Some((state, is_dongle, battery))) => {
+                    if let Some(pct) = battery {
+                        crate::commands::battery_alert::on_battery_reading(&app_handle, pct.min(100));
+                    }
                     period = if is_dongle { DONGLE_POLL } else { WIRED_POLL };
                     match state {
                         Some(s) => s,
