@@ -16,7 +16,7 @@ use commands::rgb::{send_native_hid_rgb, send_native_side_rgb, send_native_perke
 use commands::macros::{assign_macro, clear_macro_key, restore_key_defaults, read_macro_keys};
 use commands::remap::{assign_key, clear_key_remap, read_remapped_keys};
 use commands::settings::{read_device_settings, set_debounce};
-use commands::battery_alert::{close_toast, set_low_battery_alert, test_low_battery_alert};
+use commands::battery_alert::{close_toast, set_low_battery_alert};
 use commands::app::{CLOSE_TO_TRAY, get_autostart, save_backup, set_autostart, set_close_to_tray};
 use commands::device::{list_hid_devices, get_hardware_rgb_state, get_system_idle_ms, get_connection_status, get_battery_status};
 
@@ -66,7 +66,6 @@ fn main() {
             set_close_to_tray,
             save_backup,
             set_low_battery_alert,
-            test_low_battery_alert,
             close_toast,
         ])
         .setup(move |app| {

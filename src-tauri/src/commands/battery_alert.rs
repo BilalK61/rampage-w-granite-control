@@ -24,14 +24,6 @@ pub fn set_low_battery_alert(percent: u8) {
     ALERTED.store(false, Ordering::SeqCst);
 }
 
-/// Shows the alert once, regardless of the real battery level, so the user can see how it looks.
-#[tauri::command(async)]
-pub fn test_low_battery_alert(app: AppHandle) {
-    // Looks exactly like the real alert, at the configured level (20 when it is off).
-    let level = THRESHOLD.load(Ordering::SeqCst);
-    show(&app, if level == 0 { 20 } else { level });
-}
-
 #[tauri::command]
 pub fn close_toast(app: AppHandle) {
     if let Some(w) = app.get_webview_window(TOAST_LABEL) {
