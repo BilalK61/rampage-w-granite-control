@@ -22,7 +22,7 @@ const state = {
   brightness: 100,
   currentLayout: 'compact75',
   deviceConnected: true,
-  connectionType: 'wired', // 'wired' | 'dongle_24g' | 'none'
+  connectionType: 'wired', // 'wired' | 'dongle_24g' | 'bluetooth' | 'none'
   deviceName: 'Rampage W-Granite',
   perKeyColors: {},
   favoriteColors: JSON.parse(localStorage.getItem('rampage-favorites') || '["#e50914", "#00e5ff", "#ff9100", "#00e676"]'),
@@ -211,7 +211,7 @@ function renderBatteryIndicator() {
 
       <div class="battery-info">
         <span class="battery-pct">${isConnected ? (isCharging ? 'USB' : `${pct}%`) : '--'}</span>
-        <span class="battery-label">${isConnected ? (isCharging ? (lastKnownBattery() ? `Kablolu · son %${lastKnownBattery()}` : 'Kablolu') : (pct < 20 ? 'Pil düşük' : '2.4G')) : 'Bağlı değil'}</span>
+        <span class="battery-label">${isConnected ? (isCharging ? (lastKnownBattery() ? `Kablolu · son %${lastKnownBattery()}` : 'Kablolu') : (pct < 20 ? 'Pil düşük' : (state.connectionType === 'bluetooth' ? 'Bluetooth' : '2.4G'))) : 'Bağlı değil'}</span>
       </div>
     </div>
   `;
@@ -644,7 +644,7 @@ function renderActiveTabContent() {
             <div class="settings-battery-details-grid">
               <div class="battery-metric-box">
                 <span class="metric-label">Bağlantı</span>
-                <span class="metric-value">${!state.deviceConnected ? '--' : (state.connectionType === 'dongle_24g' ? '2.4G alıcı' : 'USB kablo')}</span>
+                <span class="metric-value">${!state.deviceConnected ? '--' : ({ dongle_24g: '2.4G alıcı', bluetooth: 'Bluetooth' }[state.connectionType] || 'USB kablo')}</span>
               </div>
               <div class="battery-metric-box">
                 <span class="metric-label">Pil</span>
@@ -687,7 +687,7 @@ function renderActiveTabContent() {
               <select id="sel-low-battery">
                 ${[0, 10, 15, 20, 25, 30].map(v => `<option value="${v}" ${lowBatteryLevel() === v ? 'selected' : ''}>${v === 0 ? 'Kapalı' : '%' + v}</option>`).join('')}
               </select>
-              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce sağ altta uyarı çıkar. Yalnızca 2.4G ile bağlıyken çalışır.</small></span>
+              <span>Düşük pil uyarısı <small>Pil bu seviyeye düşünce sağ altta uyarı çıkar. 2.4G ve Bluetooth ile bağlıyken çalışır; kabloda pil okunamaz.</small></span>
               <button class="btn-secondary" id="btn-test-alert" type="button">Dene</button>
             </label>
             <div class="backup-row">
@@ -1569,7 +1569,7 @@ async function refreshHardwareStatus() {
     }
 
     if (batStatus) {
-      if (batStatus.connectionType === 'dongle_24g' && batStatus.isConnected) rememberBattery(batStatus.percentage);
+      if (batStatus.connectionType !== 'wired' && batStatus.isConnected) rememberBattery(batStatus.percentage);
       if (state.battery.percentage !== batStatus.percentage ||
           state.battery.isCharging !== batStatus.isCharging ||
           state.battery.connectionType !== batStatus.connectionType) {

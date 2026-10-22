@@ -99,9 +99,9 @@ pub fn spawn_poller(app_handle: AppHandle, guard: PollGuard) {
                 let mut link = RgbLink::open(&api, &path).ok()?;
                 let state = link.query(&build_get_ledparam_packet()).ok()
                     .and_then(|reply| parse_get_ledparam_reply(&reply));
-                // Battery level rides on the same dongle link (None over the cable).
-                let battery = link.dongle_status().ok().flatten().filter(|d| d.online).map(|d| d.battery);
-                Some((state, link.is_dongle(), battery))
+                // Battery level over 2.4G or Bluetooth (None over the cable).
+                let battery = link.battery();
+                Some((state, link.is_wireless(), battery))
             })
             .await;
 

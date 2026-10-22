@@ -29,6 +29,8 @@ pub fn is_dongle_pid(pid: u16) -> bool {
 
 pub const RGB_INTERFACE: i32 = 2;
 pub const RGB_USAGE_PAGE: u16 = 0xFFFF;
+/// Vendor usage page of the Bluetooth (HID-over-GATT) command collection.
+pub const BT_USAGE_PAGE: u16 = 0xFF55;
 
 /// A lightweight snapshot of a discovered device — no open handle.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -74,7 +76,7 @@ pub fn is_rgb_interface(info: &DeviceInfo) -> bool {
     }
 
     // Must be the custom vendor Feature Report interface (Usage Page 0xFFFF or 0xFF00)
-    info.usage_page() == RGB_USAGE_PAGE || info.usage_page() == 0xFF00
+    info.usage_page() == RGB_USAGE_PAGE || info.usage_page() == 0xFF00 || info.usage_page() == BT_USAGE_PAGE
 }
 
 /// Find the path of the best matching RGB HID interface across Wired, 2.4G Dongle, and Bluetooth.
@@ -88,7 +90,7 @@ pub fn find_rgb_device_path(api: &HidApi) -> Option<String> {
         }
 
         let mut score = 10;
-        if d.usage_page() == 0xFFFF {
+        if d.usage_page() == 0xFFFF || d.usage_page() == BT_USAGE_PAGE {
             score += 100;
         }
         if d.usage() == 2 {
@@ -142,14 +144,22 @@ const DONGLE_STEP_DELAY: Duration = Duration::from_millis(10);
 const DONGLE_POLL_DELAY: Duration = Duration::from_millis(100);
 const DONGLE_POLL_TRIES: usize = 10;
 const WIRED_REPLY_DELAY: Duration = Duration::from_millis(30);
+/// Bluetooth framing: commands go out as output report 6 carrying `0x55` + the
+/// usual packet; replies come back as input report 6 with the same prefix.
+const BT_REPORT_ID: u8 = 0x06;
+const BT_PREFIX: u8 = 0x55;
+const BT_OP_BATTERY: u8 = 0x77;
+const BT_REPLY_WAIT: Duration = Duration::from_millis(1500);
+
 const STABLE_READ_TRIES: usize = 12;
 const STABLE_READ_RETRY_DELAY: Duration = Duration::from_millis(400);
 
-/// An open handle on the RGB interface, wired or through the 2.4G dongle.
+/// An open handle on the RGB interface: cable, 2.4G dongle or Bluetooth.
 /// Holds the global I/O lock for its whole lifetime.
 pub struct RgbLink {
     dev: HidDevice,
     is_dongle: bool,
+    is_bluetooth: bool,
     target_selected: bool,
     _io: MutexGuard<'static, ()>,
 }
@@ -164,11 +174,20 @@ impl RgbLink {
             .get_device_info()
             .map(|i| is_dongle_pid(i.product_id()))
             .unwrap_or(false);
-        Ok(Self { dev, is_dongle, target_selected: false, _io: io })
+        let is_bluetooth = dev
+            .get_device_info()
+            .map(|i| i.usage_page() == BT_USAGE_PAGE)
+            .unwrap_or(false);
+        Ok(Self { dev, is_dongle, is_bluetooth, target_selected: false, _io: io })
     }
 
     pub fn is_dongle(&self) -> bool {
         self.is_dongle
+    }
+
+    /// Slow links (dongle relay, Bluetooth) are polled less often.
+    pub fn is_wireless(&self) -> bool {
+        self.is_dongle || self.is_bluetooth
     }
 
     /// Send a command packet to the keyboard.
@@ -182,6 +201,9 @@ impl RgbLink {
             }
             std::thread::sleep(DONGLE_STEP_DELAY);
         }
+        if self.is_bluetooth {
+            self.bt_drain();
+        }
         self.raw_send(packet)?;
         if packet[1] == SET_LEDPARAM_OPCODE {
             note_hardware_mode(packet[2]);
@@ -192,6 +214,9 @@ impl RgbLink {
     /// Send a query packet and return the keyboard's reply (Report ID at [0]).
     pub fn query(&mut self, packet: &Packet) -> Result<[u8; PACKET_LEN], String> {
         self.send(packet)?;
+        if self.is_bluetooth {
+            return self.bt_read_reply();
+        }
         if self.is_dongle {
             self.wait_dongle(|s| s.can_read)?;
             std::thread::sleep(DONGLE_STEP_DELAY);
@@ -234,6 +259,62 @@ impl RgbLink {
         Ok(parse_dongle_status(&reply[1..]))
     }
 
+    /// Battery level of the keyboard over 2.4G or Bluetooth; `None` on the cable
+    /// (which reports nothing) or when the keyboard is asleep.
+    pub fn battery(&self) -> Option<u8> {
+        if self.is_bluetooth {
+            self.bt_battery()
+        } else {
+            self.dongle_status().ok().flatten().filter(|d| d.online).map(|d| d.battery)
+        }
+    }
+
+    fn bt_write(&self, bytes: &[u8]) -> Result<(), String> {
+        let mut out = [0u8; 66];
+        out[0] = BT_REPORT_ID;
+        out[1..1 + bytes.len()].copy_from_slice(bytes);
+        self.dev.write(&out).map(|_| ()).map_err(|e| format!("Bluetooth yazma başarısız: {e}"))
+    }
+
+    /// Throw away input reports that arrived before this command.
+    fn bt_drain(&self) {
+        let mut buf = [0u8; 80];
+        while matches!(self.dev.read_timeout(&mut buf, 0), Ok(n) if n > 0) {}
+    }
+
+    /// Wait for the keyboard's reply report and rebuild the feature-report shaped reply.
+    /// Key-matrix and macro pages come back as raw data without an opcode echo,
+    /// so any `0x55` report after the (drained) send counts as the answer.
+    fn bt_read_reply(&self) -> Result<[u8; PACKET_LEN], String> {
+        let deadline = std::time::Instant::now() + BT_REPLY_WAIT;
+        let mut buf = [0u8; 80];
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            let n = self.dev.read_timeout(&mut buf, left.as_millis().max(1) as i32)
+                .map_err(|e| format!("Bluetooth okuma başarısız: {e}"))?;
+            if n >= 3 && buf[0] == BT_REPORT_ID && buf[1] == BT_PREFIX {
+                let mut reply = [0u8; PACKET_LEN];
+                let len = (n - 2).min(PACKET_LEN - 1);
+                reply[1..1 + len].copy_from_slice(&buf[2..2 + len]);
+                return Ok(reply);
+            }
+        }
+        Err("Bluetooth: klavye cevap vermedi (uykuda olabilir).".into())
+    }
+
+    fn bt_battery(&self) -> Option<u8> {
+        self.bt_drain();
+        self.bt_write(&[BT_OP_BATTERY]).ok()?;
+        let deadline = std::time::Instant::now() + BT_REPLY_WAIT;
+        let mut buf = [0u8; 80];
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            let n = self.dev.read_timeout(&mut buf, left.as_millis().max(1) as i32).ok()?;
+            if n >= 3 && buf[0] == BT_REPORT_ID && buf[1] == BT_OP_BATTERY {
+                return Some(buf[2].min(100));
+            }
+        }
+        None
+    }
+
     fn wait_dongle(&self, ready: impl Fn(&DongleStatus) -> bool) -> Result<(), String> {
         for _ in 0..DONGLE_POLL_TRIES {
             match self.dongle_status()? {
@@ -246,6 +327,12 @@ impl RgbLink {
     }
 
     fn raw_send(&self, packet: &Packet) -> Result<(), String> {
+        if self.is_bluetooth {
+            let mut framed = [0u8; 65];
+            framed[0] = BT_PREFIX;
+            framed[1..].copy_from_slice(&packet[1..PACKET_LEN]);
+            return self.bt_write(&framed);
+        }
         self.dev.send_feature_report(packet)
             .map_err(|e| format!("send_feature_report failed: {e}"))
     }

@@ -1,6 +1,6 @@
 /// Tauri commands for HID device listing and hardware state query.
 use hidapi::HidApi;
-use crate::hid::device::{list_all_hid_devices, find_rgb_device_path, read_hardware_rgb_state, DeviceSnapshot, RgbLink, TARGET_VID, is_dongle_pid};
+use crate::hid::device::{BT_USAGE_PAGE, list_all_hid_devices, find_rgb_device_path, read_hardware_rgb_state, DeviceSnapshot, RgbLink, TARGET_VID, is_dongle_pid};
 use crate::hid::protocol::{HardwareRgbState, DongleStatus};
 
 /// `list-hid-devices` — replaces `ipcMain.handle('list-hid-devices', ...)`.
@@ -54,7 +54,7 @@ pub fn get_system_idle_ms() -> u64 {
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionStatus {
     pub connected: bool,
-    pub connection_type: String, // "wired" | "dongle_24g" | "none"
+    pub connection_type: String, // "wired" | "dongle_24g" | "bluetooth" | "none"
     pub product_name: String,
 }
 
@@ -71,10 +71,13 @@ pub fn get_connection_status() -> ConnectionStatus {
 
     let mut is_wired = false;
     let mut is_dongle = false;
+    let mut is_bluetooth = false;
 
     for d in api.device_list() {
         if d.vendor_id() == 0x3151 {
-            if d.product_id() == 0x4015 {
+            if d.usage_page() == BT_USAGE_PAGE {
+                is_bluetooth = true;
+            } else if d.product_id() == 0x4015 {
                 is_wired = true;
                 break;
             } else if d.product_id() == 0x4011 {
@@ -88,6 +91,12 @@ pub fn get_connection_status() -> ConnectionStatus {
             connected: true,
             connection_type: "wired".to_string(),
             product_name: "Rampage W-Granite (Kablolu)".to_string(),
+        }
+    } else if is_bluetooth {
+        ConnectionStatus {
+            connected: true,
+            connection_type: "bluetooth".to_string(),
+            product_name: "Rampage W-Granite (Bluetooth)".to_string(),
         }
     } else if is_dongle {
         ConnectionStatus {
@@ -119,13 +128,18 @@ pub struct BatteryStatus {
     pub percentage: u8,
     pub is_charging: bool,
     pub is_connected: bool,
-    pub connection_type: String, // "wired" | "dongle_24g" | "none"
+    pub connection_type: String, // "wired" | "dongle_24g" | "bluetooth" | "none"
     pub status_text: String,
 }
 
 /// Reads the keyboard link status from the 2.4G receiver (0xF7).
 fn read_dongle_status(api: &HidApi, path: &str) -> Option<DongleStatus> {
     RgbLink::open(api, path).ok()?.dongle_status().ok().flatten()
+}
+
+/// Battery level over Bluetooth.
+fn read_bluetooth_battery(api: &HidApi, path: &str) -> Option<u8> {
+    RgbLink::open(api, path).ok()?.battery()
 }
 
 /// Returns live keyboard battery and charging status.
@@ -146,6 +160,10 @@ pub fn get_battery_status() -> BatteryStatus {
     let dongle_path = find_rgb_device_path(&api)
         .filter(|p| api.device_list().any(|d| is_dongle_pid(d.product_id()) && d.path().to_string_lossy() == *p));
 
+    let bluetooth_path = api.device_list()
+        .find(|d| d.vendor_id() == TARGET_VID && d.usage_page() == BT_USAGE_PAGE)
+        .map(|d| d.path().to_string_lossy().into_owned());
+
     if is_wired {
         BatteryStatus {
             percentage: 100,
@@ -153,6 +171,18 @@ pub fn get_battery_status() -> BatteryStatus {
             is_connected: true,
             connection_type: "wired".to_string(),
             status_text: "Kablolu (pil seviyesi kabloda okunamıyor)".to_string(),
+        }
+    } else if let Some(path) = bluetooth_path {
+        let level = read_bluetooth_battery(&api, &path);
+        BatteryStatus {
+            percentage: level.unwrap_or(0),
+            is_charging: false,
+            is_connected: true,
+            connection_type: "bluetooth".to_string(),
+            status_text: match level {
+                Some(p) => format!("%{p} (Bluetooth)"),
+                None => "Bluetooth (pil okunamadı)".to_string(),
+            },
         }
     } else if let Some(path) = dongle_path {
         let (percentage, is_connected, status_text) = match read_dongle_status(&api, &path) {
