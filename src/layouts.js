@@ -114,12 +114,12 @@ export const KEYBOARD_LAYOUTS = {
 
 
 export const DEFAULT_PRESET_COLORS = [
-  '#8b5cf6', // Purple
-  '#06b6d4', // Cyan
-  '#ec4899', // Pink
-  '#10b981', // Emerald
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#3b82f6', // Blue
-  '#ffffff'  // White
+  '#e50914', // Rampage Crimson Red
+  '#00e5ff', // Cyber Cyan
+  '#ff9100', // Amber Orange
+  '#00e676', // Acid Green
+  '#d500f9', // Neon Purple
+  '#2979ff', // Cobalt Blue
+  '#ffd600', // Electric Yellow
+  '#ffffff'  // Crystal White
 ];

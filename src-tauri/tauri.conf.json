@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AetherRGB",
+  "productName": "Rampage W-Granite",
   "version": "1.0.0",
-  "identifier": "com.aether.rgb",
+  "identifier": "com.rampage.wgranite",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,9 +13,9 @@
     "windows": [
       {
         "label": "main",
-        "title": "AetherRGB Control Hub",
-        "width": 1200,
-        "height": 800,
+        "title": "Rampage W-Granite",
+        "width": 1280,
+        "height": 820,
         "resizable": true,
         "fullscreen": false,
         "decorations": true,

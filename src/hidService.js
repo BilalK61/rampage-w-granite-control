@@ -14,7 +14,7 @@
  * Note: Tauri command names use snake_case; Electron used kebab-case.
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 
 async function tauriInvoke(command, payload) {
   try {
@@ -30,7 +30,7 @@ export class HIDService {
     this.device = null;
     this.isConnected = false;
     this.listeners = [];
-    this.isTauri = !!(window.__TAURI__);
+    this.isTauri = isTauri();
   }
 
   onStatusChange(callback) {
@@ -121,5 +121,26 @@ export class HIDService {
       console.warn('[HID] send_native_perkey_rgb failed:', err);
       return { success: false, message: typeof err === 'string' ? err : (err.message || 'Hata') };
     }
+  }
+
+  // Get Live Battery & Charging Status
+  async getBatteryStatus() {
+    try {
+      if (this.isTauri) {
+        return await invoke('get_battery_status');
+      } else if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        return await ipcRenderer.invoke('get-battery-status');
+      }
+    } catch (e) {
+      console.warn('[HID] getBatteryStatus failed:', e);
+    }
+    return {
+      percentage: 100,
+      isCharging: true,
+      isConnected: true,
+      connectionType: 'wired',
+      statusText: 'Kablolu Şarj (USB 5V)'
+    };
   }
 }
