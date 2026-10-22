@@ -92,7 +92,7 @@ fn main() {
             let open_item = MenuItem::with_id(app, "open", "Aç", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Çık", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
-            let mut tray = TrayIconBuilder::new()
+            let mut tray = TrayIconBuilder::with_id(commands::battery_alert::TRAY_ID)
                 .tooltip("Rampage W-Granite")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
@@ -112,6 +112,7 @@ fn main() {
             tray.build(app)?;
             // Start the hardware polling task once the app window is ready.
             spawn_poller(app.handle().clone(), poll_guard);
+            commands::battery_alert::spawn_tray_tooltip(app.handle().clone());
             tracing::info!("Rampage W-Granite started — hardware poller running");
             Ok(())
         })

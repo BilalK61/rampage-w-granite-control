@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use std::time::Duration;
 
+use crate::commands::device::{get_battery_status, BatteryStatus};
+
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Percent at or below which the alert fires; 0 disables it.
@@ -74,6 +76,35 @@ fn show(app: &AppHandle, percent: u8) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(TOAST_SECONDS)).await;
         close_toast(handle);
+    });
+}
+
+pub const TRAY_ID: &str = "main";
+const TOOLTIP_REFRESH: Duration = Duration::from_secs(10);
+
+fn tooltip_text(b: &BatteryStatus) -> String {
+    let state = match b.connection_type.as_str() {
+        "wired" => "Kablolu · şarj oluyor".to_string(),
+        _ if !b.is_connected => "Klavye bağlı değil".to_string(),
+        kind => {
+            let via = if kind == "bluetooth" { "Bluetooth" } else { "2.4G" };
+            if b.percentage > 0 { format!("Pil %{} · {via}", b.percentage) } else { format!("Pil okunamadı · {via}") }
+        }
+    };
+    format!("Rampage W-Granite
+{state}")
+}
+
+/// Keeps the tray icon's hover text on the keyboard's connection and battery.
+pub fn spawn_tray_tooltip(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let status = tokio::task::spawn_blocking(get_battery_status).await;
+            if let (Ok(status), Some(tray)) = (status, app.tray_by_id(TRAY_ID)) {
+                let _ = tray.set_tooltip(Some(tooltip_text(&status)));
+            }
+            tokio::time::sleep(TOOLTIP_REFRESH).await;
+        }
     });
 }
 
