@@ -5,9 +5,10 @@ mod hid;
 mod commands;
 mod store;
 
+use tauri::Manager;
 use hid::poller::{spawn_poller, PollGuard};
 use commands::rgb::{send_native_hid_rgb, send_native_side_rgb, send_native_perkey_rgb};
-use commands::device::{list_hid_devices, get_hardware_rgb_state};
+use commands::device::{list_hid_devices, get_hardware_rgb_state, get_system_idle_ms, get_connection_status, get_battery_status};
 
 fn main() {
     tracing_subscriber::fmt()
@@ -27,11 +28,19 @@ fn main() {
             send_native_side_rgb,
             send_native_perkey_rgb,
             get_hardware_rgb_state,
+            get_system_idle_ms,
+            get_connection_status,
+            get_battery_status,
         ])
         .setup(move |app| {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+            }
             // Start the hardware polling task once the app window is ready.
             spawn_poller(app.handle().clone(), poll_guard);
-            tracing::info!("AetherRGB started — hardware poller running");
+            tracing::info!("Rampage W-Granite started — hardware poller running");
             Ok(())
         })
         .run(tauri::generate_context!())

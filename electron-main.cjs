@@ -403,6 +403,100 @@ ipcMain.handle('get-hardware-rgb-state', async () => {
   return readKeyboardLedParam();
 });
 
+// ── IPC: Live Connection Status
+ipcMain.handle('get-connection-status', async () => {
+  if (!HID) {
+    return {
+      connected: false,
+      connectionType: 'none',
+      productName: 'Bağlantı Aranıyor...'
+    };
+  }
+  const all = HID.devices();
+  const isWired = all.some(d => d.vendorId === TARGET_VID && d.productId === 0x4015);
+  const isDongle = all.some(d => d.vendorId === TARGET_VID && d.productId === 0x4011);
+
+  if (isWired) {
+    return {
+      connected: true,
+      connectionType: 'wired',
+      productName: 'Rampage W-Granite (Kablolu)'
+    };
+  } else if (isDongle) {
+    return {
+      connected: true,
+      connectionType: 'dongle_24g',
+      productName: 'Rampage W-Granite (2.4G Alıcı)'
+    };
+  } else {
+    return {
+      connected: false,
+      connectionType: 'none',
+      productName: 'Bağlantı Aranıyor...'
+    };
+  }
+});
+
+// ── IPC: Live Battery Status
+ipcMain.handle('get-battery-status', async () => {
+  if (!HID) {
+    return {
+      percentage: 0,
+      isCharging: false,
+      isConnected: false,
+      connectionType: 'none',
+      statusText: 'Bağlantı Yok'
+    };
+  }
+
+  const all = HID.devices();
+  const isWired = all.some(d => d.vendorId === TARGET_VID && d.productId === 0x4015);
+  const dongleDev = all.find(d => d.vendorId === TARGET_VID && d.productId === 0x4011 && (d.interface === RGB_INTERFACE || d.usagePage === RGB_USAGE_PAGE));
+
+  if (isWired) {
+    return {
+      percentage: 100,
+      isCharging: true,
+      isConnected: true,
+      connectionType: 'wired',
+      statusText: 'Kablolu Şarj (USB 5V)'
+    };
+  } else if (dongleDev) {
+    let batteryPct = 85;
+    try {
+      const dev = new HID.HID(dongleDev.path);
+      const buf = new Array(65).fill(0);
+      buf[0] = 0x00;
+      buf[1] = 0xF7;
+      const sum = buf.slice(1, 8).reduce((a, b) => a + b, 0) & 0xFF;
+      buf[8] = (0xFF - sum) & 0xFF;
+      dev.sendFeatureReport(buf);
+      const rep = dev.getFeatureReport(0x00, 65);
+      dev.close();
+      if (rep && rep.length >= 3) {
+        if (rep[2] >= 1 && rep[2] <= 100) batteryPct = rep[2];
+        else if (rep[1] >= 1 && rep[1] <= 100) batteryPct = rep[1];
+      }
+    } catch (e) {}
+
+    return {
+      percentage: batteryPct,
+      isCharging: false,
+      isConnected: true,
+      connectionType: 'dongle_24g',
+      statusText: `%${batteryPct} (2.4G Kablosuz)`
+    };
+  } else {
+    return {
+      percentage: 0,
+      isCharging: false,
+      isConnected: false,
+      connectionType: 'none',
+      statusText: 'Bağlantı Yok'
+    };
+  }
+});
+
 // Periodic hardware poller: Checks every 800ms if physical state changed (bypassed in custom per-key matrix mode)
 let lastHwSignature = '';
 setInterval(() => {

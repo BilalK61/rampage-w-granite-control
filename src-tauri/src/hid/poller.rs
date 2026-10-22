@@ -10,35 +10,52 @@
 ///    cannot stall the async runtime
 ///  - Thread-safe `cooldown` flag replaces the JS `isCustomMatrixActive` variable
 
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::time::Duration;
 use tokio::time;
 use tauri::{AppHandle, Emitter};
 use hidapi::HidApi;
 
-use super::device::{find_rgb_device_path, read_hardware_rgb_state};
-use super::protocol::HardwareRgbState;
+use super::device::{find_rgb_device_path, note_hardware_mode, RgbLink};
+use super::protocol::{HardwareRgbState, build_get_ledparam_packet, parse_get_ledparam_reply};
 
 /// Shared flag: while true the poller skips reading (user just sent a command;
 /// we wait for the firmware to settle before resuming hardware sync).
+///
+/// `epoch` counts app-sent commands so the poller can tell its own changes
+/// apart from ones made on the keyboard (Fn shortcuts).
 #[derive(Clone)]
-pub struct PollGuard(pub Arc<AtomicBool>);
+pub struct PollGuard {
+    suppressed: Arc<AtomicBool>,
+    epoch: Arc<AtomicU64>,
+}
 
 impl PollGuard {
-    pub fn new() -> Self { Self(Arc::new(AtomicBool::new(false))) }
+    pub fn new() -> Self {
+        Self { suppressed: Arc::new(AtomicBool::new(false)), epoch: Arc::new(AtomicU64::new(0)) }
+    }
 
     /// Suspend polling for `duration` (call after every send command).
+    /// A later call extends the window instead of being cut short by an earlier timer.
     pub fn suppress(&self, duration: Duration) {
-        let flag = Arc::clone(&self.0);
-        flag.store(true, Ordering::SeqCst);
+        let my_epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
+        self.suppressed.store(true, Ordering::SeqCst);
+        let flag = Arc::clone(&self.suppressed);
+        let epoch = Arc::clone(&self.epoch);
         tauri::async_runtime::spawn(async move {
             time::sleep(duration).await;
-            flag.store(false, Ordering::SeqCst);
+            if epoch.load(Ordering::SeqCst) == my_epoch {
+                flag.store(false, Ordering::SeqCst);
+            }
         });
     }
 
     pub fn is_suppressed(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.suppressed.load(Ordering::SeqCst)
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::SeqCst)
     }
 }
 
@@ -50,47 +67,78 @@ fn signature(s: &HardwareRgbState) -> String {
     )
 }
 
-/// Spawn the 800ms hardware polling loop.
+/// Poll period over the cable.
+const WIRED_POLL: Duration = Duration::from_millis(400);
+/// Poll period through the 2.4G dongle: each query is a multi-step RF
+/// handshake, so poll at the vendor driver's 2s cadence.
+const DONGLE_POLL: Duration = Duration::from_secs(2);
+
+/// Spawn the hardware polling loop (400ms wired, 2s via dongle).
 ///
 /// Emits `hardware-rgb-sync` to the frontend whenever the keyboard's
-/// reported state changes between polls.
+/// physical state changes (e.g. via Fn+\ or Fn+arrow shortcuts).
 pub fn spawn_poller(app_handle: AppHandle, guard: PollGuard) {
     tauri::async_runtime::spawn(async move {
-        let mut interval = time::interval(Duration::from_millis(800));
+        let mut period = WIRED_POLL;
         let mut last_sig = String::new();
         let mut initialized = false;
+        let mut baseline_epoch = guard.epoch();
 
         loop {
-            interval.tick().await;
+            time::sleep(period).await;
 
             if guard.is_suppressed() {
                 continue;
             }
+            let read_epoch = guard.epoch();
 
-            // HID read is synchronous — move it off the async executor
-            let app = app_handle.clone();
+            // HID read is synchronous — run off the async executor
             let result = tokio::task::spawn_blocking(move || {
                 let api = HidApi::new().ok()?;
                 let path = find_rgb_device_path(&api)?;
-                read_hardware_rgb_state(&api, &path).ok().flatten()
+                let mut link = RgbLink::open(&api, &path).ok()?;
+                let state = link.query(&build_get_ledparam_packet()).ok()
+                    .and_then(|reply| parse_get_ledparam_reply(&reply));
+                Some((state, link.is_dongle()))
             })
             .await;
 
             let hw = match result {
-                Ok(Some(state)) => state,
+                Ok(Some((state, is_dongle))) => {
+                    period = if is_dongle { DONGLE_POLL } else { WIRED_POLL };
+                    match state {
+                        Some(s) => s,
+                        None => continue,
+                    }
+                }
                 _ => continue,
             };
 
+            // The app sent a command while we were reading: this state may be stale.
+            if guard.epoch() != read_epoch {
+                continue;
+            }
+            note_hardware_mode(hw.mode);
+
             let sig = signature(&hw);
 
-            // On first successful read: establish baseline without firing event
-            if !initialized {
+            // First read, or first read after an app-sent command: re-baseline
+            // silently so the app's own change is not echoed back as "physical".
+            if !initialized || baseline_epoch != read_epoch {
                 last_sig = sig;
                 initialized = true;
+                baseline_epoch = read_epoch;
                 continue;
             }
 
             if last_sig != sig {
+                tracing::info!(
+                    mode = hw.mode,
+                    color = %hw.primary_color,
+                    speed = hw.speed_pct,
+                    brightness = hw.brightness_pct,
+                    "Hardware RGB state changed via physical keyboard -> emitting sync event"
+                );
                 last_sig = sig;
                 let _ = app_handle.emit("hardware-rgb-sync", &hw);
             }

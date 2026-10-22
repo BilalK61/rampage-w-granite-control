@@ -3,11 +3,30 @@
 /// Target hardware:
 ///   VID: 0x3151  PID: 0x4015 or 0x4011
 ///   Interface: 2   UsagePage: 0xFFFF
+use std::ffi::CString;
+use std::sync::{Mutex, MutexGuard, atomic::{AtomicU8, Ordering}};
+use std::time::Duration;
 use hidapi::{HidApi, HidDevice, DeviceInfo};
-use super::protocol::{Packet, HardwareRgbState, build_get_ledparam_packet, parse_get_ledparam_reply};
+use super::protocol::{
+    Packet, PACKET_LEN, HardwareRgbState, DongleStatus,
+    build_get_ledparam_packet, parse_get_ledparam_reply,
+    build_dongle_packet, parse_dongle_status,
+    DONGLE_OP_STATUS, DONGLE_OP_TARGET, DONGLE_OP_FETCH, DONGLE_TARGET_KEYBOARD,
+};
 
 pub const TARGET_VID: u16 = 0x3151;
-pub const TARGET_PIDS: &[u16] = &[0x4015, 0x4011];
+pub const TARGET_PIDS: &[u16] = &[
+    0x4015, 0x4011, 0x4010, 0x4012, 0x4013, 0x4014, 
+    0x4016, 0x4017, 0x4018, 0x4019, 0x4020, 0x4025,
+    0x0011, 0x0012, 0x0015
+];
+/// 2.4G receiver PIDs (from the vendor driver's dongle table).
+pub const DONGLE_PIDS: &[u16] = &[0x4011, 0x4014, 0x4017, 0x4021, 0x4027, 0x402D, 0x4038];
+
+pub fn is_dongle_pid(pid: u16) -> bool {
+    DONGLE_PIDS.contains(&pid)
+}
+
 pub const RGB_INTERFACE: i32 = 2;
 pub const RGB_USAGE_PAGE: u16 = 0xFFFF;
 
@@ -43,58 +62,210 @@ pub fn list_all_hid_devices(api: &HidApi) -> Vec<DeviceSnapshot> {
         .collect()
 }
 
-/// Predicate: does this `DeviceInfo` match our RGB interface?
-///
-/// Match criteria:
-///   vendor_id == TARGET_VID
-///   product_id ∈ TARGET_PIDS
-///   interface_number == RGB_INTERFACE (2)
-///   usage_page == RGB_USAGE_PAGE (0xFFFF)
+/// Predicate: does this `DeviceInfo` match our RGB interface (Wired, 2.4G Dongle, Bluetooth)?
 pub fn is_rgb_interface(info: &DeviceInfo) -> bool {
-    info.vendor_id() == TARGET_VID
-        && TARGET_PIDS.contains(&info.product_id())
-        && info.interface_number() == RGB_INTERFACE
-        && info.usage_page() == RGB_USAGE_PAGE
+    let vid = info.vendor_id();
+    let is_vendor_match = vid == TARGET_VID
+        || info.manufacturer_string().map(|m| m.contains("ROYUAN") || m.contains("Yichip")).unwrap_or(false)
+        || info.product_string().map(|p| p.contains("Wireless Keyboard") || p.contains("W-Granite") || p.contains("Rampage")).unwrap_or(false);
+
+    if !is_vendor_match {
+        return false;
+    }
+
+    // Must be the custom vendor Feature Report interface (Usage Page 0xFFFF or 0xFF00)
+    info.usage_page() == RGB_USAGE_PAGE || info.usage_page() == 0xFF00
 }
 
-/// Find the path of the first matching RGB HID interface.
+/// Find the path of the best matching RGB HID interface across Wired, 2.4G Dongle, and Bluetooth.
 pub fn find_rgb_device_path(api: &HidApi) -> Option<String> {
-    api.device_list()
-        .find(|d| is_rgb_interface(d))
-        .map(|d| d.path().to_string_lossy().into_owned())
+    let mut best_path = None;
+    let mut best_score = 0;
+
+    for d in api.device_list() {
+        if !is_rgb_interface(d) {
+            continue;
+        }
+
+        let mut score = 10;
+        if d.usage_page() == 0xFFFF {
+            score += 100;
+        }
+        if d.usage() == 2 {
+            score += 50;
+        } else if d.usage() == 1 {
+            score += 30;
+        }
+        if d.interface_number() == 2 {
+            score += 40;
+        } else if d.interface_number() == 1 {
+            score += 20;
+        }
+        // With both cable and dongle plugged in, the cable is the live link.
+        if !is_dongle_pid(d.product_id()) {
+            score += 5;
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_path = Some(d.path().to_string_lossy().into_owned());
+        }
+    }
+
+    best_path
+}
+
+const SET_LEDPARAM_OPCODE: u8 = 0x07;
+const MODE_UNKNOWN: u8 = 0xFF;
+
+/// Last lighting mode the keyboard is known to be in (from our own SET_LEDPARAM
+/// or the poller's reads). Lets per-key uploads skip re-activating mode 13,
+/// which makes the LEDs blink off and on.
+static LAST_KNOWN_MODE: AtomicU8 = AtomicU8::new(MODE_UNKNOWN);
+
+pub fn note_hardware_mode(mode: u8) {
+    LAST_KNOWN_MODE.store(mode, Ordering::SeqCst);
+}
+
+pub fn last_known_mode() -> Option<u8> {
+    match LAST_KNOWN_MODE.load(Ordering::SeqCst) {
+        MODE_UNKNOWN => None,
+        mode => Some(mode),
+    }
+}
+
+/// Serializes all RGB-interface I/O. The dongle relay is a multi-step
+/// handshake, so the poller must never interleave with a command.
+static HID_IO_LOCK: Mutex<()> = Mutex::new(());
+
+const DONGLE_STEP_DELAY: Duration = Duration::from_millis(10);
+const DONGLE_POLL_DELAY: Duration = Duration::from_millis(100);
+const DONGLE_POLL_TRIES: usize = 10;
+const WIRED_REPLY_DELAY: Duration = Duration::from_millis(30);
+const STABLE_READ_TRIES: usize = 12;
+const STABLE_READ_RETRY_DELAY: Duration = Duration::from_millis(400);
+
+/// An open handle on the RGB interface, wired or through the 2.4G dongle.
+/// Holds the global I/O lock for its whole lifetime.
+pub struct RgbLink {
+    dev: HidDevice,
+    is_dongle: bool,
+    target_selected: bool,
+    _io: MutexGuard<'static, ()>,
+}
+
+impl RgbLink {
+    pub fn open(api: &HidApi, path: &str) -> Result<Self, String> {
+        let io = HID_IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dev = api
+            .open_path(CString::new(path).map_err(|e| e.to_string())?.as_c_str())
+            .map_err(|e| format!("open_path failed: {e}"))?;
+        let is_dongle = dev
+            .get_device_info()
+            .map(|i| is_dongle_pid(i.product_id()))
+            .unwrap_or(false);
+        Ok(Self { dev, is_dongle, target_selected: false, _io: io })
+    }
+
+    pub fn is_dongle(&self) -> bool {
+        self.is_dongle
+    }
+
+    /// Send a command packet to the keyboard.
+    pub fn send(&mut self, packet: &Packet) -> Result<(), String> {
+        if self.is_dongle {
+            self.wait_dongle(|s| s.can_send)?;
+            if !self.target_selected {
+                std::thread::sleep(DONGLE_STEP_DELAY);
+                self.raw_send(&build_dongle_packet(&[DONGLE_OP_TARGET, DONGLE_TARGET_KEYBOARD]))?;
+                self.target_selected = true;
+            }
+            std::thread::sleep(DONGLE_STEP_DELAY);
+        }
+        self.raw_send(packet)?;
+        if packet[1] == SET_LEDPARAM_OPCODE {
+            note_hardware_mode(packet[2]);
+        }
+        Ok(())
+    }
+
+    /// Send a query packet and return the keyboard's reply (Report ID at [0]).
+    pub fn query(&mut self, packet: &Packet) -> Result<[u8; PACKET_LEN], String> {
+        self.send(packet)?;
+        if self.is_dongle {
+            self.wait_dongle(|s| s.can_read)?;
+            std::thread::sleep(DONGLE_STEP_DELAY);
+            self.raw_send(&build_dongle_packet(&[DONGLE_OP_FETCH]))?;
+            std::thread::sleep(DONGLE_STEP_DELAY);
+        } else {
+            std::thread::sleep(WIRED_REPLY_DELAY);
+        }
+        self.raw_get()
+    }
+
+    /// Like `query`, but only returns a reply once two consecutive reads agree.
+    /// The dongle relay sometimes hands back a stale buffer (an old reply, the
+    /// status packet or zeros); anything that gets written back must not be one.
+    pub fn query_stable(&mut self, packet: &Packet) -> Result<[u8; PACKET_LEN], String> {
+        let mut previous: Option<[u8; PACKET_LEN]> = None;
+        let mut last_err = String::from("cevap alınamadı");
+        for _ in 0..STABLE_READ_TRIES {
+            match self.query(packet) {
+                Ok(reply) if previous == Some(reply) => return Ok(reply),
+                Ok(reply) => previous = Some(reply),
+                Err(e) => {
+                    last_err = e;
+                    std::thread::sleep(STABLE_READ_RETRY_DELAY);
+                }
+            }
+        }
+        Err(format!("Okuma kararsız: {last_err}"))
+    }
+
+    /// Ask the dongle for the keyboard link status (0xF7). `None` when not a dongle.
+    pub fn dongle_status(&self) -> Result<Option<DongleStatus>, String> {
+        if !self.is_dongle {
+            return Ok(None);
+        }
+        std::thread::sleep(DONGLE_STEP_DELAY);
+        self.raw_send(&build_dongle_packet(&[DONGLE_OP_STATUS]))?;
+        std::thread::sleep(DONGLE_STEP_DELAY);
+        let reply = self.raw_get()?;
+        Ok(parse_dongle_status(&reply[1..]))
+    }
+
+    fn wait_dongle(&self, ready: impl Fn(&DongleStatus) -> bool) -> Result<(), String> {
+        for _ in 0..DONGLE_POLL_TRIES {
+            match self.dongle_status()? {
+                Some(s) if !s.online => return Err("Klavye 2.4G alıcıya bağlı değil (uykuda olabilir).".into()),
+                Some(s) if ready(&s) => return Ok(()),
+                _ => std::thread::sleep(DONGLE_POLL_DELAY),
+            }
+        }
+        Err("2.4G alıcı zaman aşımı: klavye cevap vermedi.".into())
+    }
+
+    fn raw_send(&self, packet: &Packet) -> Result<(), String> {
+        self.dev.send_feature_report(packet)
+            .map_err(|e| format!("send_feature_report failed: {e}"))
+    }
+
+    fn raw_get(&self) -> Result<[u8; PACKET_LEN], String> {
+        let mut reply = [0u8; PACKET_LEN];
+        self.dev.get_feature_report(&mut reply)
+            .map_err(|e| format!("get_feature_report failed: {e}"))?;
+        Ok(reply)
+    }
 }
 
 /// Open the device at `path`, send `packet`, then close.
-///
-/// This is a thin wrapper that always opens fresh and closes immediately —
-/// matching the JS pattern of `new HID.HID(path)` → `sendFeatureReport` → `close()`.
 pub fn send_feature_report(api: &HidApi, path: &str, packet: &Packet) -> Result<(), String> {
-    let dev: HidDevice = api
-        .open_path(std::ffi::CString::new(path).map_err(|e| e.to_string())?.as_c_str())
-        .map_err(|e| format!("open_path failed: {e}"))?;
-    dev.send_feature_report(packet)
-        .map_err(|e| format!("send_feature_report failed: {e}"))?;
-    Ok(())
-    // `dev` drops here → closes the handle
+    RgbLink::open(api, path)?.send(packet)
 }
 
 /// Open the device, send GET_LEDPARAM query, read the reply, close.
 pub fn read_hardware_rgb_state(api: &HidApi, path: &str) -> Result<Option<HardwareRgbState>, String> {
-    let dev = api
-        .open_path(std::ffi::CString::new(path).map_err(|e| e.to_string())?.as_c_str())
-        .map_err(|e| format!("open_path failed: {e}"))?;
-
-    let query = build_get_ledparam_packet();
-    dev.send_feature_report(&query)
-        .map_err(|e| format!("send GET_LEDPARAM failed: {e}"))?;
-
-    let mut reply = [0u8; 65];
-    let n = dev.get_feature_report(&mut reply)
-        .map_err(|e| format!("get_feature_report failed: {e}"))?;
-
-    if n < 9 {
-        return Ok(None);
-    }
+    let reply = RgbLink::open(api, path)?.query(&build_get_ledparam_packet())?;
     Ok(parse_get_ledparam_reply(&reply))
 }
 

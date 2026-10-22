@@ -71,6 +71,7 @@ impl LightingMode {
             "breathing"  => Some(Self::Breathing),
             "spectrum"   => Some(Self::Spectrum),
             "wave"       => Some(Self::Wave),
+            "rainbow"    => Some(Self::Wave),
             "ripple"     => Some(Self::Ripple),
             "stardots"   => Some(Self::Stardots),
             "flow"       => Some(Self::Flow),
@@ -282,6 +283,50 @@ pub fn build_get_ledparam_packet() -> Packet {
     buf
 }
 
+/// ─── 2.4G dongle relay (opcodes 0xF7 / 0xF6 / 0xFC) ─────────────────────────
+///
+/// The dongle does not forward keyboard commands on its own. Sequence used by
+/// the vendor driver (MonsGeek/Rongyuan web driver):
+///   send:  poll 0xF7 until `can_send` → 0xF6 0x0A (target = keyboard) → command
+///   read:  poll 0xF7 until `can_read` → 0xFC (fetch reply) → GET_FEATURE
+/// Dongle-local commands are sent raw (no checksum).
+
+pub const DONGLE_OP_STATUS: u8 = 0xF7;
+pub const DONGLE_OP_TARGET: u8 = 0xF6;
+pub const DONGLE_OP_FETCH: u8 = 0xFC;
+pub const DONGLE_TARGET_KEYBOARD: u8 = 0x0A;
+
+/// Build a raw dongle-local packet: `[0x00, bytes..., 0...]`.
+pub fn build_dongle_packet(bytes: &[u8]) -> Packet {
+    let mut buf = [0u8; PACKET_LEN];
+    buf[1..=bytes.len()].copy_from_slice(bytes);
+    buf
+}
+
+/// Keyboard-side status reported by the dongle's 0xF7 reply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DongleStatus {
+    pub can_read: bool,
+    pub can_send: bool,
+    pub online: bool,
+    pub battery: u8,
+}
+
+/// Parse a 0xF7 reply. `payload` is the report data without the Report ID byte:
+///   [0]=can_read  [1]=keyboard battery  [3]=keyboard offline (0 = online)
+///   [5]=can_send  [6]=paired device bitmask (bit0 = keyboard)
+pub fn parse_dongle_status(payload: &[u8]) -> Option<DongleStatus> {
+    if payload.len() < 7 || payload[6] & 0x01 == 0 {
+        return None;
+    }
+    Some(DongleStatus {
+        can_read: payload[0] == 1,
+        can_send: payload[5] == 1,
+        online:   payload[3] == 0,
+        battery:  payload[1],
+    })
+}
+
 /// Parsed reply from GET_LEDPARAM (opcode 0x87).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -296,23 +341,27 @@ pub struct HardwareRgbState {
     pub primary_color: String, // "#rrggbb"
 }
 
-/// Parse a 65-byte GET_LEDPARAM reply buffer into `HardwareRgbState`.
+/// Parse a GET_LEDPARAM reply buffer into `HardwareRgbState`.
 ///
-/// Returns `None` if the buffer is too short or the opcode doesn't match.
+/// Handles both raw 64-byte responses (`[0] == 0x87`) and 65-byte Windows HID reports (`[1] == 0x87`).
 pub fn parse_get_ledparam_reply(rep: &[u8]) -> Option<HardwareRgbState> {
-    if rep.len() < 9 || rep[1] != 0x87 {
+    let slice = if rep.len() >= 9 && rep[0] == 0x87 {
+        &rep[0..]
+    } else if rep.len() >= 10 && rep[1] == 0x87 {
+        &rep[1..]
+    } else {
         return None;
-    }
+    };
 
-    let mode          = rep[2];
-    let wire_speed    = rep[3]; // 1..5 (5=slowest, 1=fastest)
-    let brightness_w  = rep[4]; // 0..4
-    let flags_byte    = rep[5];
+    let mode          = slice[1];
+    let wire_speed    = slice[2]; // 1..5 (5=slowest, 1=fastest)
+    let brightness_w  = slice[3]; // 0..4
+    let flags_byte    = slice[4];
     let direction     = (flags_byte >> 4) & 0x0F;
     let flags         = flags_byte & 0x0F;
-    let r             = rep[6];
-    let g             = rep[7];
-    let b             = rep[8];
+    let r             = slice[5];
+    let g             = slice[6];
+    let b             = slice[7];
 
     let speed_pct      = speed_wire_to_pct(wire_speed);
     let brightness_pct = brightness_wire_to_pct(brightness_w);
@@ -411,7 +460,7 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "KeyQ"           => Some(8),
         "KeyA"           => Some(9),
         "IntlBackslash"  => Some(10), // ISO key < > |
-        "MetaLeft"       => Some(11), // Left Win/Cmd
+        "Fn"             => Some(11), // Left Fn key (Col 1 Row 6)
 
         // Col 2
         "F2"             => Some(12),
@@ -419,7 +468,7 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "KeyW"           => Some(14),
         "KeyS"           => Some(15),
         "KeyZ"           => Some(16),
-        "AltLeft"        => Some(17), // Left Alt
+        "MetaLeft"       => Some(17), // Left Win/Option (Col 2 Row 6, beneath Z)
 
         // Col 3
         "F3"             => Some(18),
@@ -427,6 +476,7 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "KeyE"           => Some(20),
         "KeyD"           => Some(21),
         "KeyX"           => Some(22),
+        "AltLeft"        => Some(23), // Left Alt/Cmd (Col 3 Row 6, beneath X)
 
         // Col 4
         "F4"             => Some(24),
@@ -470,7 +520,7 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "KeyO"           => Some(56),
         "KeyL"           => Some(57),
         "Comma"          => Some(58), // Turkish Ö
-        "AltRight"       => Some(59), // AltGr
+        "AltRight"       => Some(59), // AltGr / Cmd
 
         // Col 10
         "F10"            => Some(60),
@@ -478,7 +528,6 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "KeyP"           => Some(62),
         "Semicolon"      => Some(63), // Turkish Ş
         "Period"         => Some(64), // Turkish Ç
-        "Fn"             => Some(65),
 
         // Col 11
         "F11"            => Some(66),
@@ -503,14 +552,14 @@ pub fn keycode_to_matrix_index(code: &str) -> Option<usize> {
         "ArrowUp"        => Some(82),
         "ArrowDown"      => Some(83),
 
-        // Col 14 (Right Navigation Column)
+        // Col 14 (Right Navigation Column: Rows 1..6)
         "Search"         => Some(84),
         "Lock"           => Some(84),
-        "Home"           => Some(85),
-        "PageUp"         => Some(86),
-        "PageDown"       => Some(87),
-        "End"            => Some(88),
-        "ArrowRight"     => Some(89),
+        "Home"           => Some(85), // Row 2
+        "End"            => Some(86), // Row 3
+        "PageUp"         => Some(87), // Row 4 (PgUp)
+        "PageDown"       => Some(88), // Row 5 (PgDn)
+        "ArrowRight"     => Some(89), // Row 6
 
         _                => None,
     }
@@ -622,6 +671,31 @@ pub fn build_userpic_activate_packet() -> Packet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Captured from a real 3151:4011 dongle (Report ID stripped).
+    #[test]
+    fn dongle_status_parses_idle_reply() {
+        let s = parse_dongle_status(&[0x00, 0x42, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00]).unwrap();
+        assert_eq!(s, DongleStatus { can_read: false, can_send: true, online: true, battery: 0x42 });
+    }
+
+    #[test]
+    fn dongle_status_parses_reply_ready() {
+        let s = parse_dongle_status(&[0x01, 0x64, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00]).unwrap();
+        assert!(s.can_read);
+        assert_eq!(s.battery, 100);
+    }
+
+    #[test]
+    fn dongle_status_rejects_mouse_only_dongle() {
+        assert!(parse_dongle_status(&[0x00, 0x00, 0x50, 0x01, 0x00, 0x01, 0x02, 0x00]).is_none());
+    }
+
+    #[test]
+    fn dongle_packet_layout() {
+        let p = build_dongle_packet(&[DONGLE_OP_TARGET, DONGLE_TARGET_KEYBOARD]);
+        assert_eq!(&p[..4], &[0x00, 0xF6, 0x0A, 0x00]);
+    }
 
     // ── Checksum ──────────────────────────────────────────────────────────────
 
