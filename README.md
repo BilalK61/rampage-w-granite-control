@@ -1,6 +1,10 @@
 # W-Control ⚡
 
+**English** · [Türkçe](README.tr.md)
+
 A modern, high-performance desktop keyboard RGB lighting manager and customization suite for the **Rampage W-Granite 75% (Turkish Q)** and compatible **ROYUAN / Yichip** firmware keyboards.
+
+Ready-made installers are on the [Releases](../../releases) page.
 
 Built with **Tauri v2 (Rust)** for native USB HID communication and a **Vanilla JS / CSS** glassmorphic frontend.
 
@@ -29,7 +33,8 @@ Built with **Tauri v2 (Rust)** for native USB HID communication and a **Vanilla 
 - ⌨ **On-board macros**: record key sequences with timing and store them in the keyboard's memory, so they run with the app closed.
 - 🔁 **Key remapping**: make a key press another key or a combination of up to three keys, stored on the keyboard.
 - 🎚 **Debounce level** written to the keyboard, plus firmware version read-out.
-- 📡 **Cable and 2.4G dongle**: the dongle needs a relay handshake that the app handles; the keyboard must be awake.
+- 📡 **Cable, 2.4G dongle and Bluetooth**: the dongle needs a relay handshake and Bluetooth uses its own report framing; the app handles both. The keyboard must be awake.
+- 🔋 **Battery**: level over 2.4G and Bluetooth (the cable reports none), a low battery pop-up at a level you choose, and the tray icon tooltip shows connection and battery.
 - 🔄 **Hardware sync**: polling picks up changes made on the keyboard (`Fn` shortcuts) and mirrors them in the UI.
 - 🖥 **Tray, start with Windows, single instance**; closing the window can keep the app in the tray.
 - 💾 **Backup**: export and import profiles, macros, key assignments and settings as one JSON file.
@@ -56,8 +61,8 @@ Ensure you have the following installed on Windows:
 ### First-Time Setup
 Clone and install JavaScript dependencies:
 ```powershell
-git clone https://github.com/your-username/keyboard-rgb-app.git
-cd keyboard-rgb-app
+git clone https://github.com/BilalK61/rampage-w-granite-control.git
+cd rampage-w-granite-control
 npm install
 ```
 
@@ -101,7 +106,8 @@ npx tauri build
 **Output location:**
 ```
 src-tauri/target/release/aether-rgb.exe
-src-tauri/target/release/bundle/msi/AetherRGB_1.0.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/W-Control_1.0.0_x64-setup.exe
+src-tauri/target/release/bundle/msi/W-Control_1.0.0_x64_en-US.msi
 ```
 
 ---
@@ -112,7 +118,7 @@ To compile and test only the Rust engine without bundling the UI:
 ```powershell
 cd src-tauri
 
-# Run all 40+ unit tests (protocol checksums, byte encoders, math conversions):
+# Run the unit tests (protocol checksums, byte encoders, math conversions):
 cargo test --lib
 
 # Build debug binary:
@@ -140,7 +146,7 @@ cargo build --release
 │  ┌──────────▼───────────┐  ┌──────────────────────────┴┐  │
 │  │ HID Protocol Engine  │  │ WebView Renderer (Vite)   │  │
 │  │ - Checksum builder   │  │ - src/main.js             │  │
-│  │ - 800ms Poller task  │  │ - src/rgbEngine.js        │  │
+│  │ - Poller task        │  │ - src/rgbEngine.js        │  │
 │  │ - hidapi device I/O  │  │ - src/hidService.js       │  │
 │  └──────────┬───────────┘  │ - src/layouts.js          │  │
 │             │              └───────────────────────────┘  │
@@ -149,7 +155,7 @@ cargo build --release
 └─────────────┬──────────────────────────────────────────────┘
               │
               ▼
-    Rampage W-Granite (ROYUAN VID:0x3151 PID:0x4015/0x4011)
+    Rampage W-Granite (ROYUAN VID:0x3151, PID 0x4015 cable / 0x4011 dongle / 0x4013 Bluetooth)
 ```
 
 ---
@@ -160,6 +166,7 @@ cargo build --release
 |---|---|---|---|---|
 | Rampage W-Granite 75% (USB cable) | `0x3151` | `0x4015` | `2` | `0xFFFF` |
 | Rampage W-Granite 75% (2.4G dongle) | `0x3151` | `0x4011` | `2` | `0xFFFF` |
+| Rampage W-Granite 75% (Bluetooth) | `0x3151` | `0x4013` | - | `0xFF55` |
 
 ### Packet Specification (65 bytes, Report ID `0` at byte 0)
 Commands are feature reports. Most use a checksum `0xFF - sum(bytes[1..=7])` at byte 8 (LED parameters cover bytes 1..=8, checksum at byte 9).
@@ -177,6 +184,9 @@ Key matrix entries: stock key `[0, 0, hid, 0]`, remap `[0, k1, k2, k3]`, macro `
 
 ### 2.4G dongle relay
 The dongle does not forward commands by itself. To send: poll `0xF7` until it reports "can send", select the keyboard with `0xF6 0x0A`, then send the command. To read: poll `0xF7` until "can read", send `0xFC`, then read the feature report. Replies can be stale, so anything that gets written back is read twice and compared first.
+
+### Bluetooth
+Over Bluetooth the keyboard exposes a vendor collection (usage page `0xFF55`) instead of a feature-report interface. A command goes out as output report `6` carrying `0x55` followed by the usual packet; the reply comes back as input report `6` with the same prefix (key matrix and macro pages arrive as raw data without an opcode echo). The battery level is asked with report `0x77` and answered as `[6, 0x77, level]`.
 
 ### Safety of key assignments
 The firmware has no single-key write, so each assignment rewrites the whole key matrix. The app checks that the matrix read is complete, saves the original matrix to `%APPDATA%aether-rgbkeymap-backup-p0.bin` before the first change, and reads every write back. "Tüm tuşları ilk haline döndür" writes the backup back.
