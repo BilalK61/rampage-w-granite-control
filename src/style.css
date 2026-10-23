@@ -1000,14 +1000,16 @@ body {
 
 .fav-remove {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: -5px;
+  right: -5px;
+  z-index: 2;
+  cursor: pointer;
   background: var(--rampage-red);
   color: #fff;
   border-radius: 50%;
-  width: 12px;
-  height: 12px;
-  font-size: 8px;
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
   display: flex;
   align-items: center;
   justify-content: center;

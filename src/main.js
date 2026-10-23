@@ -497,7 +497,7 @@ function renderActiveTabContent() {
 
           ${state.favoriteColors.length > 0 ? `
           <div style="display:flex; align-items:center; gap:5px; margin-top:-2px;">
-            <div class="color-palette" style="flex-wrap:nowrap; overflow:hidden;">
+            <div class="color-palette" style="flex-wrap:nowrap; padding:5px 5px 0 0;">
               ${state.favoriteColors.slice(0, 8).map((c, i) => `
                 <div class="color-swatch favorite-swatch ${state.primaryColor === c ? 'active' : ''}" style="background:${c}; position:relative; width:17px; height:17px;" data-color="${c}" data-fav-index="${i}" title="${c}">
                   <span class="fav-remove" data-fav-index="${i}" title="Kaldır">✕</span>
@@ -1054,6 +1054,19 @@ function bindEvents() {
       state.direction = parseInt(btn.getAttribute('data-dir'));
       if (rgbEngine) rgbEngine.setDirection(state.direction);
       renderApp();
+    });
+  });
+
+  // Remove a favorite color (the small ✕ on its swatch)
+  document.querySelectorAll('.fav-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const i = Number(btn.getAttribute('data-fav-index'));
+      if (Number.isInteger(i) && i >= 0 && i < state.favoriteColors.length) {
+        state.favoriteColors.splice(i, 1);
+        saveFavorites();
+        renderApp();
+      }
     });
   });
 
