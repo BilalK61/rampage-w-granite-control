@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "4PP Studio",
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico"
