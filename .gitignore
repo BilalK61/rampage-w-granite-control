@@ -58,3 +58,8 @@ logs/
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.local
 .cache/
+
+# Brand logos belong to their owner and are not published with the source
+public/rampage-seeklogo.png
+public/rampage-seeklogo-beyaz.png
+public/app-icon.png
