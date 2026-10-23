@@ -1,4 +1,4 @@
-# AetherRGB Control Hub ⚡
+# W-Control ⚡
 
 A modern, high-performance desktop keyboard RGB lighting manager and customization suite for the **Rampage W-Granite 75% (Turkish Q)** and compatible **ROYUAN / Yichip** firmware keyboards.
 
@@ -205,4 +205,4 @@ If `cargo build` throws `error: linker link.exe not found` or `LNK1181: cannot o
 ## 📜 License
 All rights reserved. The source is published for viewing and evaluation; contact the author before reusing it.
 
-This is an independent project and is not affiliated with Rampage, Segment or the keyboard's firmware vendor. Product names and logos belong to their respective owners. The brand logos used by the author's own build are not included in this repository; without them the sidebar shows a plain "W-Granite" title.
+This is an independent project and is not affiliated with Rampage, Segment or the keyboard's firmware vendor. Product names and logos belong to their respective owners. The brand logos used by the author's own build are not included in this repository; without them the sidebar shows a plain "W-Control" title.

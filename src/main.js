@@ -227,7 +227,7 @@ function renderApp() {
     <aside class="sidebar">
       <!-- Rampage Official Brand Header (Aligned with Top Navbar) -->
       <div class="brand-container">
-        <img src="${logoSrc}" alt="Rampage" class="rampage-brand-img" onerror="this.replaceWith(Object.assign(document.createElement('span'), { className: 'brand-fallback', textContent: 'W-Granite' }))" />
+        <img src="${logoSrc}" alt="Rampage" class="rampage-brand-img" onerror="this.replaceWith(Object.assign(document.createElement('span'), { className: 'brand-fallback', textContent: 'W-Control' }))" />
       </div>
 
       <nav class="nav-menu">

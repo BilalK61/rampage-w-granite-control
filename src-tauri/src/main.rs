@@ -93,7 +93,7 @@ fn main() {
             let quit_item = MenuItem::with_id(app, "quit", "Çık", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
             let mut tray = TrayIconBuilder::with_id(commands::battery_alert::TRAY_ID)
-                .tooltip("Rampage W-Granite")
+                .tooltip("W-Control")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -113,7 +113,7 @@ fn main() {
             // Start the hardware polling task once the app window is ready.
             spawn_poller(app.handle().clone(), poll_guard);
             commands::battery_alert::spawn_tray_tooltip(app.handle().clone());
-            tracing::info!("Rampage W-Granite started — hardware poller running");
+            tracing::info!("W-Control started — hardware poller running");
             Ok(())
         })
         .run(tauri::generate_context!())

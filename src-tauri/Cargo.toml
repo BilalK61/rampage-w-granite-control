@@ -2,7 +2,7 @@
 name = "aether-rgb"
 version = "0.1.0"
 edition = "2021"
-description = "AetherRGB Control Hub — Rust/Tauri backend"
+description = "W-Control — Rust/Tauri backend"
 
 [[bin]]
 name = "aether-rgb"

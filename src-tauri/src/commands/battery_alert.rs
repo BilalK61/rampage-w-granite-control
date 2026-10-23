@@ -91,8 +91,7 @@ fn tooltip_text(b: &BatteryStatus) -> String {
             if b.percentage > 0 { format!("Pil %{} · {via}", b.percentage) } else { format!("Pil okunamadı · {via}") }
         }
     };
-    format!("Rampage W-Granite
-{state}")
+    format!("W-Control\n{state}")
 }
 
 /// Keeps the tray icon's hover text on the keyboard's connection and battery.

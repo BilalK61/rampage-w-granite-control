@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Rampage W-Granite",
+  "productName": "W-Control",
   "version": "1.0.0",
   "identifier": "com.rampage.wgranite",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Rampage W-Granite",
+        "title": "W-Control",
         "width": 1280,
         "height": 820,
         "resizable": true,
