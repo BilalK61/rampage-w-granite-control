@@ -10,6 +10,20 @@ Built with **Tauri v2 (Rust)** for native USB HID communication and a **Vanilla 
 
 ---
 
+## 📸 Screenshots
+
+| Lighting (dark) | Lighting (light) |
+|---|---|
+| ![Lighting, dark theme](docs/screenshots/aydinlatma-koyu.png) | ![Lighting, light theme](docs/screenshots/aydinlatma-acik.png) |
+
+| Macros and key assignment | Settings |
+|---|---|
+| ![Macros and key assignment](docs/screenshots/makro-ve-tus-atama.png) | ![Settings](docs/screenshots/ayarlar.png) |
+
+The screenshots show the interface running without a keyboard attached, so the connection shows "USB" and the debounce level is empty.
+
+---
+
 ## 📋 Table of Contents
 1. [✨ Features](#-features)
 2. [Prerequisites](#-prerequisites)

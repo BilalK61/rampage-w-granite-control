@@ -10,6 +10,20 @@ USB HID iletişimi için **Tauri v2 (Rust)**, arayüz için **Vanilla JS / CSS**
 
 ---
 
+## 📸 Ekran görüntüleri
+
+| Aydınlatma (koyu tema) | Aydınlatma (açık tema) |
+|---|---|
+| ![Aydınlatma, koyu tema](docs/screenshots/aydinlatma-koyu.png) | ![Aydınlatma, açık tema](docs/screenshots/aydinlatma-acik.png) |
+
+| Makro ve tuş atama | Ayarlar |
+|---|---|
+| ![Makro ve tuş atama](docs/screenshots/makro-ve-tus-atama.png) | ![Ayarlar](docs/screenshots/ayarlar.png) |
+
+Görüntüler arayüzün klavye takılı olmadan çalışan halidir; bu yüzden bağlantı "USB" görünür ve debounce seviyesi boştur.
+
+---
+
 ## ✨ Özellikler
 
 - 🌈 Hız, parlaklık, yön ve renk ayarlı **19 donanım aydınlatma modu**.
