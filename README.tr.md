@@ -42,6 +42,12 @@ Bu klavyenin yazılımı şunları desteklemez (üreticinin kendi sürücüsü d
 
 ---
 
+## 🔒 İndirmeyi doğrulama
+
+Kurulum dosyaları kod imzalı değildir; bu yüzden Windows SmartScreen ve bazı antivirüs motorları uyarı verebilir. VirusTotal'da `W-Control_1.0.0_x64-setup.exe` dosyası 70 motordan 4'ünde, yeni ve imzasız yazılımlarda sık görülen genel makine öğrenmesi tespitleriyle işaretlendi. İndirdiğiniz dosyanın yayınlanan dosya olduğunu SHA-256 değerini (PowerShell: `Get-FileHash .W-Control_1.0.0_x64-setup.exe`) [release sayfasındaki](../../releases) değerle karşılaştırarak doğrulayabilirsiniz. İsterseniz kurulum dosyasını hiç kullanmayıp uygulamayı aşağıda anlatıldığı gibi kaynak koddan derleyebilirsiniz.
+
+---
+
 ## 🛠 Gereksinimler (geliştirme için)
 
 | Gereksinim | Önerilen sürüm | İndirme |

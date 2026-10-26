@@ -57,6 +57,12 @@ Not supported by this keyboard's firmware (the vendor driver stubs them out too)
 
 ---
 
+## 🔒 Verifying the download
+
+The installers are not code-signed, so Windows SmartScreen and a few antivirus engines may warn about them. On VirusTotal, 4 of 70 engines flagged `W-Control_1.0.0_x64-setup.exe` with generic machine-learning detections, which is common for new unsigned software. You can check that your download is the published file by comparing its SHA-256 (PowerShell: `Get-FileHash .W-Control_1.0.0_x64-setup.exe`) with the value on the [release page](../../releases), or skip the installer and build the app from source as described below.
+
+---
+
 ## 🛠 Prerequisites
 
 Ensure you have the following installed on Windows:
