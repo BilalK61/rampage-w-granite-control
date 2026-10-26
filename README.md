@@ -213,6 +213,6 @@ If `cargo build` throws `error: linker link.exe not found` or `LNK1181: cannot o
 ---
 
 ## 📜 License
-All rights reserved. The source is published for viewing and evaluation; contact the author before reusing it.
+Released under the [MIT License](LICENSE).
 
-This is an independent project and is not affiliated with Rampage, Segment or the keyboard's firmware vendor. Product names and logos belong to their respective owners. The brand logos used by the author's own build are not included in this repository; without them the sidebar shows a plain "W-Control" title.
+This is an independent project and is not affiliated with Rampage, Segment or the keyboard's firmware vendor. Product names and logos belong to their respective owners. Use it at your own risk: the app writes to the keyboard's memory (key matrix, macros, lighting), and although it keeps a backup of the original key matrix, a firmware or hardware problem cannot be ruled out. The brand logos used by the author's own build are not included in this repository; without them the sidebar shows a plain "W-Control" title.

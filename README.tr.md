@@ -122,6 +122,6 @@ Protokol, üreticinin herkese açık web sürücüsünden çıkarılmış ve kla
 ---
 
 ## 📜 Lisans
-Tüm hakları saklıdır. Kaynak kod görüntüleme ve değerlendirme için yayımlanmıştır; yeniden kullanmadan önce yazarla iletişime geçin.
+[MIT Lisansı](LICENSE) ile yayımlanmıştır.
 
-Bu bağımsız bir projedir; Rampage, Segment ya da klavyenin yazılım üreticisiyle bağlantısı yoktur. Ürün adları ve logolar ilgili sahiplerine aittir. Yazarın kendi derlemesinde kullandığı marka logoları bu depoya dahil değildir; logolar olmadan kenar çubuğunda yalnızca "W-Control" başlığı görünür.
+Bu bağımsız bir projedir; Rampage, Segment ya da klavyenin yazılım üreticisiyle bağlantısı yoktur. Ürün adları ve logolar ilgili sahiplerine aittir. Kullanım sorumluluğu size aittir: uygulama klavyenin belleğine (tuş matrisi, makrolar, aydınlatma) yazar; özgün tuş matrisinin yedeği alınsa da bir yazılım ya da donanım sorunu tamamen dışlanamaz. Yazarın kendi derlemesinde kullandığı marka logoları bu depoya dahil değildir; logolar olmadan kenar çubuğunda yalnızca "W-Control" başlığı görünür.
