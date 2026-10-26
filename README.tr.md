@@ -48,6 +48,21 @@ Kurulum dosyaları kod imzalı değildir; bu yüzden Windows SmartScreen ve baz�
 
 ---
 
+## 🧱 Kendiniz derleyin
+
+İndirilmiş bir kurulum dosyası çalıştırmak istemezseniz, burada okuyabildiğiniz kaynak koddan uygulamayı kendiniz derleyebilirsiniz. Node.js, Rust ve Visual Studio C++ araçları gerekir ([Gereksinimler](#-gereksinimler-geliştirme-için)), sonra:
+
+```powershell
+git clone https://github.com/BilalK61/rampage-w-granite-control.git
+cd rampage-w-granite-control
+npm install
+npx tauri build
+```
+
+Kurulum dosyaları `src-tauri/target/release/bundle/` klasöründe, düz program ise `src-tauri/target/release/W-Control.exe` olarak oluşur. Kaynaktan yaptığınız derleme de imzalı değildir, ama içine tam olarak neyin girdiğini bilirsiniz. Rampage logoları depoda olmadığı için kendi derlemenizde de logo bulunmaz.
+
+---
+
 ## 🛠 Gereksinimler (geliştirme için)
 
 | Gereksinim | Önerilen sürüm | İndirme |

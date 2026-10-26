@@ -63,6 +63,21 @@ The installers are not code-signed, so Windows SmartScreen and a few antivirus e
 
 ---
 
+## 🧱 Build it yourself
+
+If you would rather not run a downloaded installer, build the app from the source you can read here. You need Node.js, Rust and the Visual Studio C++ tools (see [Prerequisites](#-prerequisites)), then:
+
+```powershell
+git clone https://github.com/BilalK61/rampage-w-granite-control.git
+cd rampage-w-granite-control
+npm install
+npx tauri build
+```
+
+The installers are created in `src-tauri/target/release/bundle/` and the plain program is `src-tauri/target/release/W-Control.exe`. A build from source is not signed either, but you know exactly what went into it. Your own build also has no Rampage logos, because they are not part of the repository.
+
+---
+
 ## 🛠 Prerequisites
 
 Ensure you have the following installed on Windows:
