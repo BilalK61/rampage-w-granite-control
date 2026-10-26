@@ -10,6 +10,9 @@ USB HID iletişimi için **Tauri v2 (Rust)**, arayüz için **Vanilla JS / CSS**
 
 ---
 
+> [!WARNING]
+> W-Control klavyenin belleğine (tuş matrisi, makrolar, aydınlatma) yazar. İlk değişiklikten önce özgün tuş matrisinin yedeğini alır ve yazılan her şeyi doğrular, ama bir yazılım ya da donanım sorunu tamamen dışlanamaz. Kullanım sorumluluğu size aittir. Bu bağımsız bir projedir; Rampage, Segment ya da klavyenin yazılım üreticisiyle bağlantısı yoktur.
+
 ## 📸 Ekran görüntüleri
 
 | Aydınlatma (koyu tema) | Aydınlatma (açık tema) |

@@ -10,6 +10,9 @@ Built with **Tauri v2 (Rust)** for native USB HID communication and a **Vanilla 
 
 ---
 
+> [!WARNING]
+> W-Control writes to the keyboard's memory (key matrix, macros, lighting). It saves a backup of the original key matrix before the first change and checks every write, but a firmware or hardware problem cannot be ruled out. Use it at your own risk. This is an independent project, not affiliated with Rampage, Segment or the keyboard's firmware vendor.
+
 ## 📸 Screenshots
 
 | Lighting (dark) | Lighting (light) |
